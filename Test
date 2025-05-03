@@ -153,7 +153,7 @@ if not Luna then
     return
 end
 
--- Add compatibility wrapper for Luna UI
+-- Add comprehensive compatibility wrapper for Luna UI
 local function ensureCompatibility()
     -- Ensure Luna has all the necessary methods
     if not Luna.CreateWindow then
@@ -162,11 +162,131 @@ local function ensureCompatibility()
         end
     end
 
+    -- Handle direct and instance method versions
+    if type(Luna.CreateWindow) ~= "function" and type(Luna.CreateUI) == "function" then
+        Luna.CreateWindow = function(self, ...)
+            if self == Luna then
+                return Luna:CreateUI(...)
+            else
+                return Luna:CreateUI(self, ...)
+            end
+        end
+    end
+
     -- Handle tab refresh methods
     if Luna.RefreshTheme and not Luna.RefreshUI then
         Luna.RefreshUI = Luna.RefreshTheme
     elseif Luna.RefreshUI and not Luna.RefreshTheme then
         Luna.RefreshTheme = Luna.RefreshUI
+    end
+
+    -- Ensure Luna has CreateTab method
+    if not Luna.CreateTab then
+        Luna.CreateTab = function(...)
+            return Luna.Window and Luna.Window:AddTab(...) or {}
+        end
+    end
+
+    -- Add section, toggle, button, slider, dropdown, and keybind compatibility
+    if not Luna.CreateSection then
+        Luna.CreateSection = function(self, name)
+            if type(self) == "string" then
+                return Luna:AddSection(self)
+            else
+                return self:AddSection(name)
+            end
+        end
+    end
+
+    if not Luna.CreateToggle then
+        Luna.CreateToggle = function(self, options)
+            if type(self) ~= "table" then return {} end
+            if self.AddToggle then
+                return self:AddToggle(options)
+            elseif Luna.AddToggle then
+                return Luna:AddToggle(self, options)
+            else
+                return {}
+            end
+        end
+    end
+
+    if not Luna.CreateSlider then
+        Luna.CreateSlider = function(self, options)
+            if type(self) ~= "table" then return {} end
+            if self.AddSlider then
+                return self:AddSlider(options)
+            elseif Luna.AddSlider then
+                return Luna:AddSlider(self, options)
+            else
+                return {}
+            end
+        end
+    end
+
+    if not Luna.CreateDropdown then
+        Luna.CreateDropdown = function(self, options)
+            if type(self) ~= "table" then return {} end
+            if self.AddDropdown then
+                return self:AddDropdown(options)
+            elseif Luna.AddDropdown then
+                return Luna:AddDropdown(self, options)
+            else
+                return {}
+            end
+        end
+    end
+
+    if not Luna.CreateButton then
+        Luna.CreateButton = function(self, options)
+            if type(self) ~= "table" then return {} end
+            if self.AddButton then
+                return self:AddButton(options)
+            elseif Luna.AddButton then
+                return Luna:AddButton(self, options)
+            else
+                return {}
+            end
+        end
+    end
+
+    if not Luna.CreateKeybind then
+        Luna.CreateKeybind = function(self, options)
+            if type(self) ~= "table" then return {} end
+            if self.AddKeybind then
+                return self:AddKeybind(options)
+            elseif Luna.AddKeybind then
+                return Luna:AddKeybind(self, options)
+            else
+                return {}
+            end
+        end
+    end
+
+    if not Luna.CreateParagraph then
+        Luna.CreateParagraph = function(self, options)
+            if type(self) ~= "table" then return {} end
+            if self.AddParagraph then
+                return self:AddParagraph(options)
+            elseif Luna.AddParagraph then
+                return Luna:AddParagraph(self, options)
+            else
+                return {}
+            end
+        end
+    end
+
+    -- Make all methods accessible to both Luna and its instances
+    for name, func in pairs(Luna) do
+        if type(func) == "function" and name:match("^Create") then
+            -- Add method to Luna object itself if it doesn't exist
+            if not Luna[name] then
+                Luna[name] = func
+            end
+
+            -- Also make it available as an instance method
+            Luna["Add" .. name:sub(7)] = Luna["Add" .. name:sub(7)] or func
+        end
     end
 end
 
@@ -182,13 +302,23 @@ if not Luna.tabRefreshAdded then
             tab.RefreshTab = function()
                 if Luna.RefreshUI then Luna:RefreshUI() end
                 if Luna.RefreshTheme then Luna:RefreshTheme() end
+
+                -- Try to refresh child elements if possible
+                if tab.RefreshElements then
+                    tab:RefreshElements()
+                end
+
+                -- Ensure tab is visible
+                if tab.Instance and tab.Instance.Visible ~= nil then
+                    tab.Instance.Visible = true
+                end
             end
         end
         return tab
     end
 end
 
--- Helper function for safe table index
+-- Helper function for safe table index access
 local function safeIndex(t, index)
     if type(t) ~= "table" and type(t) ~= "userdata" then
         return nil
@@ -1641,13 +1771,38 @@ task.spawn(function()
     end
 end)
 
--- Final notification and load configuration
-Luna:Notification({
-    Title = "Eclipse Hub",
-    Content = "Script successfully loaded. Enjoy the Script 😉.",
-    Icon = "check_circle",
-    ImageSource = "Material"
-})
+-- Function to update tabs
+local function UpdateTabs()
+    for tabName, tab in pairs(Tabs) do
+        if tab.RefreshTab then
+            tab:RefreshTab()
+        end
+    end
+end
+
+-- Apply tab refreshes to ensure visibility
+task.spawn(function()
+    wait(1)
+    UpdateTabs()
+    Luna:RefreshUI()
+
+    -- Try refreshing again after a delay
+    wait(2)
+    UpdateTabs()
+    Luna:RefreshUI()
+
+    -- One more time for any remaining elements
+    wait(3)
+    UpdateTabs()
+    Luna:RefreshUI()
+
+    Luna:Notification({
+        Title = "UI Refreshed",
+        Content = "All tabs should now be visible",
+        Icon = "refresh",
+        ImageSource = "Material"
+    })
+end)
 
 -- Load user's saved configuration
 Luna:LoadAutoloadConfig()
@@ -1661,7 +1816,46 @@ for flag, element in pairs(Options) do
     end
 end
 
--- Final notification and load configuration
+-- Explicitly refresh each tab's elements
+for _, tab in pairs(Tabs) do
+    for _, option in pairs(Options) do
+        if option.Set and option.Default then
+            option:Set(option.Default)
+        end
+    end
+end
+
+-- Force elements to appear correctly
+task.spawn(function()
+    for i = 1, 5 do
+        wait(i)
+        Luna:RefreshUI()
+        UpdateTabs()
+
+        -- Update each option state
+        for _, option in pairs(Options) do
+            if option.Set and option.Default then
+                option:Set(option.Default)
+            end
+        end
+    end
+end)
+
+-- More aggressive tab refreshing
+task.spawn(function()
+    for i = 1, 10 do
+        wait(i * 0.5)
+        for tabName, tab in pairs(Tabs) do
+            if tab.RefreshTab then
+                tab:RefreshTab()
+                print("Refreshed tab:", tabName)
+            end
+        end
+        Luna:RefreshUI()
+    end
+end)
+
+-- Final notification
 Luna:Notification({
     Title = "Eclipse Hub",
     Content = "Script successfully loaded. Enjoy the Script 😉.",
@@ -1669,36 +1863,98 @@ Luna:Notification({
     ImageSource = "Material"
 })
 
--- Load user's saved configuration
-Luna:LoadAutoloadConfig()
+-- Intensive UI refresh schedule to ensure all elements are visible
+task.spawn(function()
+    -- Immediate refresh
+    Luna:RefreshUI()
+    UpdateTabs()
 
--- Function to update tabs
-local function UpdateTabs()
-    for tabName, tab in pairs(Tabs) do
-        if tab.RefreshTab then
-            tab:RefreshTab()
-        end
-        print("Refreshed tab:", tabName)
+    -- Schedule multiple refreshes at different intervals
+    for i = 1, 15 do
+        task.delay(i * 0.5, function()
+            Luna:RefreshUI()
+            UpdateTabs()
+
+            -- Apply each tab's value to force UI update
+            for tabName, tab in pairs(Tabs) do
+                if tab.RefreshTab then
+                    tab:RefreshTab()
+                    print("Refreshed tab:", tabName)
+                end
+
+                -- Attempt to make the tab visible
+                pcall(function()
+                    if tab.Instance then
+                        tab.Instance.Visible = true
+                    end
+                end)
+            end
+
+            -- Re-apply all element values
+            for flag, element in pairs(Options) do
+                if element.Set and element.Value then
+                    task.spawn(function()
+                        pcall(function()
+                            element:Set(element.Value)
+                        end)
+                    end)
+                elseif element.Set and element.Default then
+                    task.spawn(function()
+                        pcall(function()
+                            element:Set(element.Default)
+                        end)
+                    end)
+                end
+            end
+        end)
     end
-end
+end)
 
--- Call update tabs multiple times to ensure all elements are visible
+-- Apply any window-specific refresh methods
 task.spawn(function()
     wait(1)
-    UpdateTabs()
+    -- Try to find and invoke window refresh methods
+    if Window.Refresh then Window:Refresh() end
+    if Window.RefreshUI then Window:RefreshUI() end
+    if Window.RefreshTheme then Window:RefreshTheme() end
+    if Window.RefreshElements then Window:RefreshElements() end
 
-    -- Try refreshing again after a longer delay
-    wait(2)
-    UpdateTabs()
+    -- Recursively find and refresh containers
+    local function refreshContainer(container)
+        if not container or type(container) ~= "table" then return end
 
-    -- Try one more time for any remaining elements
-    wait(3)
-    Luna:Notification({
-        Title = "UI Refreshed",
-        Content = "All tabs should now be visible",
-        Icon = "refresh",
-        ImageSource = "Material"
-    })
+        if container.RefreshElements then
+            container:RefreshElements()
+        end
+
+        if container.Refresh then
+            container:Refresh()
+        end
+
+        if container.Children then
+            for _, child in pairs(container.Children) do
+                refreshContainer(child)
+            end
+        end
+
+        if container.Tabs then
+            for _, tab in pairs(container.Tabs) do
+                refreshContainer(tab)
+            end
+        end
+
+        if container.Elements then
+            for _, element in pairs(container.Elements) do
+                refreshContainer(element)
+            end
+        end
+    end
+
+    -- Start the recursive refresh
+    refreshContainer(Window)
+
+    -- Try any known UI fix method
+    if Luna.FixUI then Luna:FixUI() end
 end)
 
 -- Handle Luna UI Library's global state
