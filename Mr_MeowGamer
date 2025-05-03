@@ -478,7 +478,7 @@ Options.QuickTPSpeed = Tabs.Physics:CreateSlider({
 Options.QuickTPBind = Tabs.Physics:CreateKeybind({
     Name = "Keybind",
     Flag = "QuickTPBind",
-    Default = "F",
+    Default = Enum.KeyCode.F,
     Description = "Key to activate Quick TP"
 })
 
@@ -1597,6 +1597,10 @@ for flag, element in pairs(Options) do
     if element.Value == nil and element.Default ~= nil then
         if element.Set then
             element:Set(element.Default)
+        elseif element.SetValue then
+            element:SetValue(element.Default)
+        elseif element.SetState then
+            element:SetState(element.Default)
         end
     end
 end
