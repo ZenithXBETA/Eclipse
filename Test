@@ -145,7 +145,48 @@ local ping = 0
 local fps = 0
 
 -- Initialize Luna Interface Library
-local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/main/source.lua", true))()
+local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/main/source.lua", true))()
+
+-- Ensure script has access to necessary methods
+if not Luna then
+    warn("Failed to load Luna Interface Suite!")
+    return
+end
+
+-- Add compatibility wrapper for Luna UI
+local function ensureCompatibility()
+    -- Ensure Luna has all the necessary methods
+    if not Luna.CreateWindow then
+        Luna.CreateWindow = function(...)
+            return Luna:CreateUI(...) or {}
+        end
+    end
+
+    -- Handle tab refresh methods
+    if Luna.RefreshTheme and not Luna.RefreshUI then
+        Luna.RefreshUI = Luna.RefreshTheme
+    elseif Luna.RefreshUI and not Luna.RefreshTheme then
+        Luna.RefreshTheme = Luna.RefreshUI
+    end
+end
+
+ensureCompatibility()
+
+-- Add a tab refresh method if needed
+local originalCreateTab = Luna.CreateTab or function() end
+if not Luna.tabRefreshAdded then
+    Luna.tabRefreshAdded = true
+    Luna.CreateTab = function(self, ...)
+        local tab = originalCreateTab(self, ...)
+        if tab and not tab.RefreshTab then
+            tab.RefreshTab = function()
+                if Luna.RefreshUI then Luna:RefreshUI() end
+                if Luna.RefreshTheme then Luna:RefreshTheme() end
+            end
+        end
+        return tab
+    end
+end
 
 -- Helper function for safe table index
 local function safeIndex(t, index)
@@ -176,7 +217,7 @@ Luna:Notification({
 local Window = Luna:CreateWindow({
     Name = "Eclipse Hub - Football Fusion 2",
     Subtitle = "by Veylo",
-    LogoID = nil,
+    LogoID = nil, -- No logo
     LoadingEnabled = true,
     LoadingTitle = "Eclipse Hub",
     LoadingSubtitle = "Football Fusion 2",
@@ -206,19 +247,19 @@ local Window = Luna:CreateWindow({
 local Tabs = {
     Catching = Window:CreateTab({
         Name = "Catching",
-        Icon = "radio",
+        Icon = "radio_button_checked", -- Updated icon
         ImageSource = "Material",
         ShowTitle = true
     }),
     Physics = Window:CreateTab({
         Name = "Physics",
-        Icon = "rocket",
+        Icon = "rocket_launch", -- Updated icon
         ImageSource = "Material",
         ShowTitle = true
     }),
     Auto = Window:CreateTab({
         Name = "Auto",
-        Icon = "bot",
+        Icon = "smart_toy", -- Updated icon
         ImageSource = "Material",
         ShowTitle = true
     }),
@@ -230,7 +271,7 @@ local Tabs = {
     }),
     Player = Window:CreateTab({
         Name = "Player",
-        Icon = "user",
+        Icon = "person",  -- Updated icon
         ImageSource = "Material",
         ShowTitle = true
     }),
@@ -245,15 +286,22 @@ local Tabs = {
 -- Store all options in a table for easy access
 local Options = {}
 
+-- Fix for Luna UI Library to ensure proper element callbacks
+local function createCallback(element, flag)
+    return function(value)
+        if not element then return end
+        element.Value = value
+    end
+end
+
 -- Physics Tab Elements
 local PhysicsSection = Tabs.Physics:CreateSection("Movement")
 
 Options.QuickTP = Tabs.Physics:CreateToggle({
-    Name = "QuickTP",
+    Name = "Quick TP",
     Flag = "QuickTP",
     Default = false,
-    Description = "Teleport quickly in the direction you're moving",
-    Callback = function(Value) end
+    Description = "Teleport quickly in the direction you're moving"
 })
 
 Options.QuickTPSpeed = Tabs.Physics:CreateSlider({
@@ -263,25 +311,21 @@ Options.QuickTPSpeed = Tabs.Physics:CreateSlider({
     Minimum = 1,
     Maximum = 5,
     Increment = 1,
-    Default = 3,
-    Callback = function(Value) end
+    Default = 3
 })
 
 Options.QuickTPBind = Tabs.Physics:CreateKeybind({
     Name = "Keybind",
     Flag = "QuickTPBind",
     Default = "F",
-    Description = "Key to activate Quick TP",
-    Mode = "Toggle",
-    Callback = function(Value) end
+    Description = "Key to activate Quick TP"
 })
 
 Options.ClickTackleAimbot = Tabs.Physics:CreateToggle({
     Name = "Click Tackle Aimbot",
     Flag = "ClickTackleAimbot",
     Default = false,
-    Description = "Teleport to the ball carrier when clicking",
-    Callback = function(Value) end
+    Description = "Teleport to the ball carrier when clicking"
 })
 
 Options.ClickTackleAimbotDistance = Tabs.Physics:CreateSlider({
@@ -291,56 +335,49 @@ Options.ClickTackleAimbotDistance = Tabs.Physics:CreateSlider({
     Minimum = 0,
     Maximum = 15,
     Increment = 1,
-    Default = 7,
-    Callback = function(Value) end
+    Default = 7
 })
 
 Options.AntiJam = Tabs.Physics:CreateToggle({
     Name = "Anti Jam",
     Flag = "AntiJam",
     Default = false,
-    Description = "Prevents you from getting jammed",
-    Callback = function(Value) end
+    Description = "Prevents you from getting jammed"
 })
 
 Options.AntiBlock = Tabs.Physics:CreateToggle({
     Name = "Anti Block",
     Flag = "AntiBlock",
     Default = false,
-    Description = "Prevents players from blocking you",
-    Callback = function(Value) end
+    Description = "Prevents players from blocking you"
 })
 
 Options.VisualizeBallPath = Tabs.Physics:CreateToggle({
     Name = "Visualize Ball Path",
     Flag = "VisualizeBallPath",
     Default = false,
-    Description = "Shows the path of the ball",
-    Callback = function(Value) end
+    Description = "Shows the path of the ball"
 })
 
 Options.NoJumpCooldown = Tabs.Physics:CreateToggle({
     Name = "No Jump Cooldown",
     Flag = "NoJumpCooldown",
     Default = false,
-    Description = "Removes the cooldown between jumps",
-    Callback = function(Value) end
+    Description = "Removes the cooldown between jumps"
 })
 
 Options.NoFreeze = Tabs.Physics:CreateToggle({
     Name = "No Freeze",
     Flag = "NoFreeze",
     Default = false,
-    Description = "Prevents movement freezing",
-    Callback = function(Value) end
+    Description = "Prevents movement freezing"
 })
 
 Options.OptimalJump = Tabs.Physics:CreateToggle({
     Name = "Optimal Jump",
     Flag = "OptimalJump",
     Default = false,
-    Description = "Shows the best position to jump for catches",
-    Callback = function(Value) end
+    Description = "Shows the best position to jump for catches"
 })
 
 Options.OptimalJumpType = Tabs.Physics:CreateDropdown({
@@ -348,25 +385,21 @@ Options.OptimalJumpType = Tabs.Physics:CreateDropdown({
     Flag = "OptimalJumpType",
     Description = "Jump or dive indicator",
     Items = {"Jump", "Dive"},
-    Default = "Jump",
-    Multi = false,
-    Callback = function(Value) end
+    Default = "Jump"
 })
 
 Options.NoBallTrail = Tabs.Physics:CreateToggle({
     Name = "No Ball Trail",
     Flag = "NoBallTrail",
     Default = false,
-    Description = "Removes the trail behind the ball",
-    Callback = function(Value) end
+    Description = "Removes the trail behind the ball"
 })
 
 Options.BigHead = Tabs.Physics:CreateToggle({
     Name = "Big Head",
     Flag = "BigHead",
     Default = false,
-    Description = "Increases the size of player heads",
-    Callback = function(Value) end
+    Description = "Increases the size of player heads"
 })
 
 Options.BigHeadSize = Tabs.Physics:CreateSlider({
@@ -376,8 +409,7 @@ Options.BigHeadSize = Tabs.Physics:CreateSlider({
     Minimum = 1,
     Maximum = 5,
     Increment = 1,
-    Default = 3,
-    Callback = function(Value) end
+    Default = 3
 })
 
 if firetouchinterest and not IS_SOLARA then
@@ -387,8 +419,7 @@ if firetouchinterest and not IS_SOLARA then
         Name = "Tackle Extender",
         Flag = "TackleExtender",
         Default = false,
-        Description = "Extends your tackle reach",
-        Callback = function(Value) end
+        Description = "Extends your tackle reach"
     })
 
     Options.TackleExtenderRadius = Tabs.Physics:CreateSlider({
@@ -398,8 +429,7 @@ if firetouchinterest and not IS_SOLARA then
         Minimum = 0,
         Maximum = 10,
         Increment = 1,
-        Default = 5,
-        Callback = function(Value) end
+        Default = 5
     })
 end
 
@@ -410,8 +440,7 @@ if AC_BYPASS then
         Name = "Block Extender",
         Flag = "BlockExtender",
         Default = false,
-        Description = "Extends your blocking range",
-        Callback = function(Value) end
+        Description = "Extends your blocking range"
     })
 
     Options.BlockExtenderRange = Tabs.Physics:CreateSlider({
@@ -421,8 +450,7 @@ if AC_BYPASS then
         Minimum = 1,
         Maximum = 20,
         Increment = 1,
-        Default = 10,
-        Callback = function(Value) end
+        Default = 10
     })
 
     Options.BlockExtenderTransparency = Tabs.Physics:CreateSlider({
@@ -432,8 +460,7 @@ if AC_BYPASS then
         Minimum = 0,
         Maximum = 1,
         Increment = 0.1,
-        Default = 1,
-        Callback = function(Value) end
+        Default = 1
     })
 
     local FlySection = Tabs.Physics:CreateSection("Fly Options")
@@ -450,12 +477,21 @@ if AC_BYPASS then
             flying = Value
 
             if Value then
-                player.Character.Humanoid.PlatformStand = true
-                local bodyVelocity = Instance.new("BodyVelocity", player.Character.HumanoidRootPart)
+                local character = player.Character
+                if not character then return end
+
+                local humanoid = character:FindFirstChild("Humanoid")
+                if not humanoid then return end
+
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                humanoid.PlatformStand = true
+                local bodyVelocity = Instance.new("BodyVelocity", hrp)
                 local camera = workspace.CurrentCamera
                 bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                 bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                local bodyGyro = Instance.new("BodyGyro", player.Character.HumanoidRootPart)
+                local bodyGyro = Instance.new("BodyGyro", hrp)
                 bodyGyro.P = 15000
                 bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
 
@@ -464,7 +500,7 @@ if AC_BYPASS then
                         runService.Stepped:wait()
                         local speed = 11 + (flySpeed * 2.5)
                         local endPos = camera.CFrame.Position + camera.CFrame.LookVector * 500
-                        bodyGyro.CFrame = CFrame.new(player.Character.HumanoidRootPart.Position, endPos)
+                        bodyGyro.CFrame = CFrame.new(hrp.Position, endPos)
                         local velocity = Vector3.new(0, 0, 0)
 
                         if not userInputService:GetFocusedTextBox() then
@@ -475,14 +511,14 @@ if AC_BYPASS then
                                 velocity = velocity + camera.CFrame.LookVector * -speed
                             end
                             if userInputService:IsKeyDown(Enum.KeyCode.A) then
-                                velocity = velocity + player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(-speed, 0, 0))
+                                velocity = velocity + hrp.CFrame:vectorToWorldSpace(Vector3.new(-speed, 0, 0))
                             end
                             if userInputService:IsKeyDown(Enum.KeyCode.D) then
-                                velocity = velocity + player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(speed, 0, 0))
+                                velocity = velocity + hrp.CFrame:vectorToWorldSpace(Vector3.new(speed, 0, 0))
                             end
                         end
 
-                        if player.Character.Humanoid.Health <= 0 then
+                        if humanoid.Health <= 0 then
                             flying = false
                         end
 
@@ -490,9 +526,11 @@ if AC_BYPASS then
                         task.wait()
                     end
 
-                    player.Character.Humanoid.PlatformStand = false
-                    bodyGyro:Destroy()
-                    bodyVelocity:Destroy()
+                    pcall(function()
+                        humanoid.PlatformStand = false
+                        bodyGyro:Destroy()
+                        bodyVelocity:Destroy()
+                    end)
                 end)
             end
         end
@@ -524,7 +562,7 @@ Options.Speed = Tabs.Player:CreateToggle({
         local character = player.Character
         local humanoid = character and character:FindFirstChild("Humanoid")
         if humanoid and Value then
-            humanoid.WalkSpeed = Options.SpeedValue.Value
+            humanoid.WalkSpeed = Options.SpeedValue and Options.SpeedValue.Value or 22
         end
     end
 })
@@ -613,16 +651,14 @@ Options.AutoCap = Tabs.Auto:CreateToggle({
     Name = "Auto Cap",
     Flag = "AutoCap",
     Default = false,
-    Description = "Makes you auto win the race for captain",
-    Callback = function(Value) end
+    Description = "Makes you auto win the race for captain"
 })
 
 Options.AutoCapEnabled = Tabs.Auto:CreateToggle({
     Name = "Enabled",
     Flag = "AutoCapEnabled",
     Default = false,
-    Description = "Enable/disable auto cap feature",
-    Callback = function(Value) end
+    Description = "Enable/disable auto cap feature"
 })
 
 -- Throwing Tab Elements
@@ -632,8 +668,7 @@ Options.QBAimbot = Tabs.Throwing:CreateToggle({
     Name = "QB Aimbot",
     Flag = "QBAimbot",
     Default = false,
-    Description = "Makes your throws more accurate",
-    Callback = function(Value) end
+    Description = "Makes your throws more accurate"
 })
 
 Tabs.Throwing:CreateParagraph({
@@ -648,8 +683,7 @@ Options.Magnets = Tabs.Catching:CreateToggle({
     Name = "Magnets",
     Flag = "Magnets",
     Default = false,
-    Description = "Helps you catch the ball",
-    Callback = function(Value) end
+    Description = "Helps you catch the ball"
 })
 
 Options.MagnetsType = Tabs.Catching:CreateDropdown({
@@ -657,9 +691,7 @@ Options.MagnetsType = Tabs.Catching:CreateDropdown({
     Flag = "MagnetsType",
     Description = "How obvious the magnets behavior is",
     Items = {"Blatant", "Legit", "League"},
-    Default = "League",
-    Multi = false,
-    Callback = function(Value) end
+    Default = "League"
 })
 
 Options.MagnetsCustomRadius = Tabs.Catching:CreateSlider({
@@ -669,8 +701,7 @@ Options.MagnetsCustomRadius = Tabs.Catching:CreateSlider({
     Minimum = 0,
     Maximum = 70,
     Increment = 1,
-    Default = 35,
-    Callback = function(Value) end
+    Default = 35
 })
 
 Options.ShowMagHitbox = Tabs.Catching:CreateToggle({
@@ -1613,10 +1644,62 @@ end)
 -- Final notification and load configuration
 Luna:Notification({
     Title = "Eclipse Hub",
-    Content = "Script successfully loaded. Enjoy the Script!",
+    Content = "Script successfully loaded. Enjoy the Script 😉.",
     Icon = "check_circle",
     ImageSource = "Material"
 })
 
 -- Load user's saved configuration
 Luna:LoadAutoloadConfig()
+
+-- Initialize all UI elements
+for flag, element in pairs(Options) do
+    if element.Value == nil and element.Default ~= nil then
+        if element.Set then
+            element:Set(element.Default)
+        end
+    end
+end
+
+-- Final notification and load configuration
+Luna:Notification({
+    Title = "Eclipse Hub",
+    Content = "Script successfully loaded. Enjoy the Script 😉.",
+    Icon = "check_circle",
+    ImageSource = "Material"
+})
+
+-- Load user's saved configuration
+Luna:LoadAutoloadConfig()
+
+-- Function to update tabs
+local function UpdateTabs()
+    for tabName, tab in pairs(Tabs) do
+        if tab.RefreshTab then
+            tab:RefreshTab()
+        end
+        print("Refreshed tab:", tabName)
+    end
+end
+
+-- Call update tabs multiple times to ensure all elements are visible
+task.spawn(function()
+    wait(1)
+    UpdateTabs()
+
+    -- Try refreshing again after a longer delay
+    wait(2)
+    UpdateTabs()
+
+    -- Try one more time for any remaining elements
+    wait(3)
+    Luna:Notification({
+        Title = "UI Refreshed",
+        Content = "All tabs should now be visible",
+        Icon = "refresh",
+        ImageSource = "Material"
+    })
+end)
+
+-- Handle Luna UI Library's global state
+_G.Luna_ConfigLoaded = true
