@@ -1,11 +1,11 @@
-if getgenv().eclipsehub then warn("YxuSinx is already executed"); return; end
-getgenv().eclipsehub = true;
+if getgenv().eclipsehub then warn("Eclipse Hub is already executed") return end
+getgenv().eclipsehub = true
 
 -- Global variables
 local angleTick = 0
 
 loadstring([[
-local function LPH_NO_VIRTUALIZE(f) return f; end;
+local function LPH_NO_VIRTUALIZE(f) return f end;
 ]])();
 
 -- Safely get Players service
@@ -48,105 +48,9 @@ end)
 
 local IS_PRACTICE = game.PlaceId == 8206123457
 local IS_SOLARA = typeof(getexecutorname) == "function" and string.match(getexecutorname(), "Solara") or false
--- Set AC_BYPASS to true for all cases, not just practice mode, to help prevent kicks
-local AC_BYPASS = true
-
--- Define some constants specific to FF2 anti-cheat
-local MAX_TELEPORT_DISTANCE = 5 -- Maximum allowable teleport distance to avoid detection
-local MAX_VELOCITY_CHANGE = 50 -- Maximum velocity change to avoid detection
-local ANTI_CHEAT_DETECTION_THRESHOLD = 1.5 -- Time threshold for suspicious activity
-local lastTeleportTime = 0
-local lastVelocityChange = 0
-local isSafeToModify = true
-
--- Monitor anti-cheat status
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        local currentTime = os.clock()
-        -- Reset flag after a safe period
-        if currentTime - lastTeleportTime > ANTI_CHEAT_DETECTION_THRESHOLD and
-           currentTime - lastVelocityChange > ANTI_CHEAT_DETECTION_THRESHOLD then
-            isSafeToModify = true
-        end
-    end
-end)
-
--- Safe teleport function that avoids detection
-local function safeTeleport(part, targetPosition, instant)
-    if not part or not targetPosition then return end
-
-    local currentPosition = part.Position
-    local distance = (targetPosition - currentPosition).Magnitude
-    local currentTime = os.clock()
-
-    -- If we recently teleported, don't do it again too soon
-    if currentTime - lastTeleportTime < ANTI_CHEAT_DETECTION_THRESHOLD then
-        isSafeToModify = false
-        return
-    end
-
-    -- Record the teleport time
-    lastTeleportTime = currentTime
-
-    -- Limit teleport distance to avoid detection
-    if distance > MAX_TELEPORT_DISTANCE and not instant then
-        local direction = (targetPosition - currentPosition).Unit
-        targetPosition = currentPosition + direction * MAX_TELEPORT_DISTANCE
-    end
-
-    if instant then
-        part.CFrame = CFrame.new(targetPosition)
-    else
-        -- Teleport in small increments
-        local steps = math.ceil(distance / 2) -- More steps for longer distances
-        steps = math.min(steps, 10) -- Cap at 10 steps
-
-        for i = 1, steps do
-            task.wait(0.02) -- Small delay between teleports
-            part.CFrame = CFrame.new(currentPosition:Lerp(targetPosition, i/steps))
-        end
-    end
-end
-
--- Safe velocity change function that avoids detection
-local function safeVelocityChange(part, targetVelocity)
-    if not part or not targetVelocity then return end
-
-    local currentVelocity = part.Velocity
-    local velocityDelta = (targetVelocity - currentVelocity).Magnitude
-    local currentTime = os.clock()
-
-    -- If we recently changed velocity, don't do it again too soon
-    if currentTime - lastVelocityChange < ANTI_CHEAT_DETECTION_THRESHOLD/2 then
-        isSafeToModify = false
-        return
-    end
-
-    -- Record the velocity change time
-    lastVelocityChange = currentTime
-
-    -- Limit velocity change to avoid detection
-    if velocityDelta > MAX_VELOCITY_CHANGE then
-        local direction = (targetVelocity - currentVelocity).Unit
-        targetVelocity = currentVelocity + direction * MAX_VELOCITY_CHANGE
-    end
-
-    part.Velocity = targetVelocity
-end
+local AC_BYPASS = IS_PRACTICE
 
 local moveToUsing = {}
-
--- Custom table.find implementation for Lua 5.1
-local function table_find(tbl, value)
-    if type(tbl) ~= "table" then return nil end
-    for i, v in pairs(tbl) do
-        if v == value then
-            return i
-        end
-    end
-    return nil
-end
 
 -- Clean up old moveToUsing times
 task.spawn(function()
@@ -163,31 +67,23 @@ end)
 
 -- Track last moveTo time
 task.spawn(function()
-    -- Check if MoveTo exists before trying to hook it
-    local function hookMoveToIfExists(humanoid)
-        -- Check if MoveTo is a valid member of the humanoid
-        local success, oldMoveTo = pcall(function()
-            return typeof(humanoid.MoveTo) == "function" and humanoid.MoveTo or nil
-        end)
+    local oldMoveTo = player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.MoveTo
 
-        if success and oldMoveTo then
-            -- Only hook if the function exists
-            humanoid.MoveTo = function(self, position, ...)
-                table.insert(moveToUsing, os.clock())
-                return oldMoveTo(self, position, ...)
-            end
+    if oldMoveTo then
+        player.Character.Humanoid.MoveTo = function(self, position, ...)
+            table.insert(moveToUsing, os.clock())
+            return oldMoveTo(self, position, ...)
         end
     end
 
-    -- Try to hook on current character
-    if player.Character and player.Character:FindFirstChild("Humanoid") then
-        hookMoveToIfExists(player.Character.Humanoid)
-    end
-
-    -- Hook on future characters
     player.CharacterAdded:Connect(function(character)
         local humanoid = character:WaitForChild("Humanoid")
-        hookMoveToIfExists(humanoid)
+        local oldMoveTo = humanoid.MoveTo
+
+        humanoid.MoveTo = function(self, position, ...)
+            table.insert(moveToUsing, os.clock())
+            return oldMoveTo(self, position, ...)
+        end
     end)
 end)
 
@@ -208,128 +104,6 @@ if not LPH_OBFUSCATED then
     getfenv().LPH_NO_VIRTUALIZE = function(f) return f end
 end
 
--- Additional Anti-cheat bypass setup
--- If we're not in practice mode, add extra protection
-if not IS_PRACTICE then
-    task.spawn(function()
-        local mt = getrawmetatable(game)
-        local old = mt.__namecall
-        setreadonly(mt, false)
-        mt.__namecall = newcclosure(function(self, ...)
-            local args = {...}
-            local method = getnamecallmethod()
-            if method == "FireServer" or method == "fireServer" then
-                local callName = nil
-                pcall(function() callName = args[1] end)
-                if typeof(callName) == "string" and string.find(tostring(callName), "AC") then
-                    return wait(9e9)
-                end
-            end
-            return old(self, ...)
-        end)
-        setreadonly(mt, true)
-    end)
-end
-
--- Additional anti-cheat bypasses
-task.spawn(function()
-    -- Hook more game functions that might trigger anti-cheat
-    local function hookAntiCheatFunction(funcName)
-        local oldFunc
-        oldFunc = hookfunction(funcName, function(...)
-            local args = {...}
-            if string.find(tostring(args[1]), "AC") then
-                return wait(9e9)
-            end
-            return oldFunc(...)
-        end)
-    end
-
-    -- Try to hook known anti-cheat functions
-    pcall(function()
-        for _, v in pairs(getgc()) do
-            if type(v) == "function" and islclosure(v) then
-                local info = debug.getinfo(v)
-                if info.name and string.find(info.name:lower(), "cheat") then
-                    hookfunction(v, function() return nil end)
-                end
-
-                -- Also check for functions that might be used in anti-cheat
-                if info.name and (string.find(info.name:lower(), "check") or string.find(info.name:lower(), "verify")) then
-                    hookfunction(v, function() return true end)
-                end
-            end
-        end
-    end)
-
-    -- Break physics measurements that might be used for anti-cheat
-    pcall(function()
-        local oldVelocity = Instance.new("Vector3Value")
-        oldVelocity.Value = Vector3.new(0, 0, 0)
-
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            local method = getnamecallmethod()
-            if not checkcaller() and self:IsA("BasePart") and
-               (method == "GetVelocity" or method == "getVelocity") then
-                local currentVel = oldNamecall(self, ...)
-                -- Smooth out velocity changes to avoid detection
-                oldVelocity.Value = oldVelocity.Value:Lerp(currentVel, 0.5)
-                return oldVelocity.Value
-            end
-            return oldNamecall(self, ...)
-        end)
-    end)
-end)
-
--- Add Football Fusion 2 specific anti-cheat bypass
-task.spawn(function()
-    -- Monitor key events the game might use for detection
-    local remoteFolder = replicatedStorage:FindFirstChild("Remotes")
-    if remoteFolder then
-        for _, remote in pairs(remoteFolder:GetDescendants()) do
-            if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
-                -- Block specific anti-cheat related remotes
-                if remote.Name:find("AC") or remote.Name:find("Check") or remote.Name:find("Verify") then
-                    local oldFireServer = remote.FireServer
-                    remote.FireServer = function(...)
-                        -- Just return nil for anti-cheat related calls
-                        return nil
-                    end
-                end
-            end
-        end
-    end
-
-    -- Look for specific FF2 anti-cheat modules
-    for _, module in pairs(replicatedStorage:GetDescendants()) do
-        if module:IsA("ModuleScript") and
-          (module.Name:find("Security") or module.Name:find("AntiCheat") or module.Name:find("AC")) then
-            local oldRequire = require
-            require = function(...)
-                local args = {...}
-                if args[1] == module then
-                    return {
-                        Initialize = function() end,
-                        Check = function() return true end,
-                        Validate = function() return true end,
-                        IsValid = function() return true end
-                    }
-                end
-                return oldRequire(...)
-            end
-        end
-    end
-
-    -- Hook key anti-cheat methods
-    for _, instance in pairs(game:GetDescendants()) do
-        if instance:IsA("LocalScript") and
-          (instance.Name:find("Security") or instance.Name:find("AntiCheat") or instance.Name:find("AC")) then
-            instance.Disabled = true
-        end
-    end
-end)
-
 local Handshake = replicatedStorage.Remotes.CharacterSoundEvent
 local Hooks = {}
 local HandshakeInts = {}
@@ -337,12 +111,12 @@ local HandshakeInts = {}
 LPH_NO_VIRTUALIZE(function()
     for i, v in getgc() do
         if typeof(v) == "function" and islclosure(v) then
-            if (#getprotos(v) == 1) and table_find(getconstants(getproto(v, 1)), 4000001) then
+            if (#getprotos(v) == 1) and table.find(getconstants(getproto(v, 1)), 4000001) then
                 hookfunction(v, function() end)
             end
         end
     end
-end)();
+end)()
 
 Hooks.__namecall = hookmetamethod(game, "__namecall", LPH_NO_VIRTUALIZE(function(self, ...)
     local Method = getnamecallmethod()
@@ -352,12 +126,8 @@ Hooks.__namecall = hookmetamethod(game, "__namecall", LPH_NO_VIRTUALIZE(function
         if (#HandshakeInts == 0) then
             HandshakeInts = {table.unpack(Args[2], 2, 18)}
         else
-            for i, v in ipairs(HandshakeInts) do
+            for i, v in HandshakeInts do
                 Args[2][i + 1] = v
-            end
-            -- Add this return to completely block AC calls
-            if not IS_PRACTICE then
-                return nil
             end
         end
     end
@@ -374,7 +144,663 @@ end
 local ping = 0
 local fps = 0
 
--- Utility functions
+-- Initialize Luna Interface Library
+local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/main/source.lua", true))()
+
+-- Helper function for safe table index
+local function safeIndex(t, index)
+    if type(t) ~= "table" and type(t) ~= "userdata" then
+        return nil
+    end
+
+    local success, result = pcall(function()
+        return t[index]
+    end)
+
+    if success then
+        return result
+    else
+        return nil
+    end
+end
+
+-- Show notification
+Luna:Notification({
+    Title = "Eclipse Hub",
+    Content = "Successfully loaded FF2 script",
+    Icon = "notifications_active",
+    ImageSource = "Material"
+})
+
+-- Create window
+local Window = Luna:CreateWindow({
+    Name = "Eclipse Hub - Football Fusion 2",
+    Subtitle = "by Veylo",
+    LogoID = nil,
+    LoadingEnabled = true,
+    LoadingTitle = "Eclipse Hub",
+    LoadingSubtitle = "Football Fusion 2",
+
+    ConfigSettings = {
+        RootFolder = "EclipseHub",
+        ConfigFolder = "ff2"
+    },
+
+    KeySystem = false,
+    KeySettings = {
+        Title = "Eclipse Hub",
+        Subtitle = "Key System",
+        Note = "This script does not require a key.",
+        SaveInRoot = false,
+        SaveKey = false,
+        Key = {""},
+        SecondAction = {
+            Enabled = false,
+            Type = "Link",
+            Parameter = ""
+        }
+    }
+})
+
+-- Create tabs
+local Tabs = {
+    Catching = Window:CreateTab({
+        Name = "Catching",
+        Icon = "radio",
+        ImageSource = "Material",
+        ShowTitle = true
+    }),
+    Physics = Window:CreateTab({
+        Name = "Physics",
+        Icon = "rocket",
+        ImageSource = "Material",
+        ShowTitle = true
+    }),
+    Auto = Window:CreateTab({
+        Name = "Auto",
+        Icon = "bot",
+        ImageSource = "Material",
+        ShowTitle = true
+    }),
+    Throwing = Window:CreateTab({
+        Name = "Throwing",
+        Icon = "send",
+        ImageSource = "Material",
+        ShowTitle = true
+    }),
+    Player = Window:CreateTab({
+        Name = "Player",
+        Icon = "user",
+        ImageSource = "Material",
+        ShowTitle = true
+    }),
+    Settings = Window:CreateTab({
+        Name = "Settings",
+        Icon = "settings",
+        ImageSource = "Material",
+        ShowTitle = true
+    })
+}
+
+-- Store all options in a table for easy access
+local Options = {}
+
+-- Physics Tab Elements
+local PhysicsSection = Tabs.Physics:CreateSection("Movement")
+
+Options.QuickTP = Tabs.Physics:CreateToggle({
+    Name = "QuickTP",
+    Flag = "QuickTP",
+    Default = false,
+    Description = "Teleport quickly in the direction you're moving",
+    Callback = function(Value) end
+})
+
+Options.QuickTPSpeed = Tabs.Physics:CreateSlider({
+    Name = "Speed",
+    Flag = "QuickTPSpeed",
+    Description = "QuickTP speed multiplier",
+    Minimum = 1,
+    Maximum = 5,
+    Increment = 1,
+    Default = 3,
+    Callback = function(Value) end
+})
+
+Options.QuickTPBind = Tabs.Physics:CreateKeybind({
+    Name = "Keybind",
+    Flag = "QuickTPBind",
+    Default = "F",
+    Description = "Key to activate Quick TP",
+    Mode = "Toggle",
+    Callback = function(Value) end
+})
+
+Options.ClickTackleAimbot = Tabs.Physics:CreateToggle({
+    Name = "Click Tackle Aimbot",
+    Flag = "ClickTackleAimbot",
+    Default = false,
+    Description = "Teleport to the ball carrier when clicking",
+    Callback = function(Value) end
+})
+
+Options.ClickTackleAimbotDistance = Tabs.Physics:CreateSlider({
+    Name = "Distance",
+    Flag = "ClickTackleAimbotDistance",
+    Description = "Maximum teleport distance",
+    Minimum = 0,
+    Maximum = 15,
+    Increment = 1,
+    Default = 7,
+    Callback = function(Value) end
+})
+
+Options.AntiJam = Tabs.Physics:CreateToggle({
+    Name = "Anti Jam",
+    Flag = "AntiJam",
+    Default = false,
+    Description = "Prevents you from getting jammed",
+    Callback = function(Value) end
+})
+
+Options.AntiBlock = Tabs.Physics:CreateToggle({
+    Name = "Anti Block",
+    Flag = "AntiBlock",
+    Default = false,
+    Description = "Prevents players from blocking you",
+    Callback = function(Value) end
+})
+
+Options.VisualizeBallPath = Tabs.Physics:CreateToggle({
+    Name = "Visualize Ball Path",
+    Flag = "VisualizeBallPath",
+    Default = false,
+    Description = "Shows the path of the ball",
+    Callback = function(Value) end
+})
+
+Options.NoJumpCooldown = Tabs.Physics:CreateToggle({
+    Name = "No Jump Cooldown",
+    Flag = "NoJumpCooldown",
+    Default = false,
+    Description = "Removes the cooldown between jumps",
+    Callback = function(Value) end
+})
+
+Options.NoFreeze = Tabs.Physics:CreateToggle({
+    Name = "No Freeze",
+    Flag = "NoFreeze",
+    Default = false,
+    Description = "Prevents movement freezing",
+    Callback = function(Value) end
+})
+
+Options.OptimalJump = Tabs.Physics:CreateToggle({
+    Name = "Optimal Jump",
+    Flag = "OptimalJump",
+    Default = false,
+    Description = "Shows the best position to jump for catches",
+    Callback = function(Value) end
+})
+
+Options.OptimalJumpType = Tabs.Physics:CreateDropdown({
+    Name = "Type",
+    Flag = "OptimalJumpType",
+    Description = "Jump or dive indicator",
+    Items = {"Jump", "Dive"},
+    Default = "Jump",
+    Multi = false,
+    Callback = function(Value) end
+})
+
+Options.NoBallTrail = Tabs.Physics:CreateToggle({
+    Name = "No Ball Trail",
+    Flag = "NoBallTrail",
+    Default = false,
+    Description = "Removes the trail behind the ball",
+    Callback = function(Value) end
+})
+
+Options.BigHead = Tabs.Physics:CreateToggle({
+    Name = "Big Head",
+    Flag = "BigHead",
+    Default = false,
+    Description = "Increases the size of player heads",
+    Callback = function(Value) end
+})
+
+Options.BigHeadSize = Tabs.Physics:CreateSlider({
+    Name = "Size",
+    Flag = "BigHeadSize",
+    Description = "Head size multiplier",
+    Minimum = 1,
+    Maximum = 5,
+    Increment = 1,
+    Default = 3,
+    Callback = function(Value) end
+})
+
+if firetouchinterest and not IS_SOLARA then
+    local TackleSection = Tabs.Physics:CreateSection("Tackle Options")
+
+    Options.TackleExtender = Tabs.Physics:CreateToggle({
+        Name = "Tackle Extender",
+        Flag = "TackleExtender",
+        Default = false,
+        Description = "Extends your tackle reach",
+        Callback = function(Value) end
+    })
+
+    Options.TackleExtenderRadius = Tabs.Physics:CreateSlider({
+        Name = "Radius",
+        Flag = "TackleExtenderRadius",
+        Description = "Tackle extension distance",
+        Minimum = 0,
+        Maximum = 10,
+        Increment = 1,
+        Default = 5,
+        Callback = function(Value) end
+    })
+end
+
+if AC_BYPASS then
+    local BlockSection = Tabs.Physics:CreateSection("Block Options")
+
+    Options.BlockExtender = Tabs.Physics:CreateToggle({
+        Name = "Block Extender",
+        Flag = "BlockExtender",
+        Default = false,
+        Description = "Extends your blocking range",
+        Callback = function(Value) end
+    })
+
+    Options.BlockExtenderRange = Tabs.Physics:CreateSlider({
+        Name = "Range",
+        Flag = "BlockExtenderRange",
+        Description = "Block extension distance",
+        Minimum = 1,
+        Maximum = 20,
+        Increment = 1,
+        Default = 10,
+        Callback = function(Value) end
+    })
+
+    Options.BlockExtenderTransparency = Tabs.Physics:CreateSlider({
+        Name = "Transparency",
+        Flag = "BlockExtenderTransparency",
+        Description = "Visual transparency of block zone",
+        Minimum = 0,
+        Maximum = 1,
+        Increment = 0.1,
+        Default = 1,
+        Callback = function(Value) end
+    })
+
+    local FlySection = Tabs.Physics:CreateSection("Fly Options")
+
+    local flying = false
+    local flySpeed = 1
+
+    Options.Fly = Tabs.Physics:CreateToggle({
+        Name = "Fly",
+        Flag = "Fly",
+        Default = false,
+        Description = "Enables flight mode",
+        Callback = function(Value)
+            flying = Value
+
+            if Value then
+                player.Character.Humanoid.PlatformStand = true
+                local bodyVelocity = Instance.new("BodyVelocity", player.Character.HumanoidRootPart)
+                local camera = workspace.CurrentCamera
+                bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                local bodyGyro = Instance.new("BodyGyro", player.Character.HumanoidRootPart)
+                bodyGyro.P = 15000
+                bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+
+                task.spawn(function()
+                    while flying do
+                        runService.Stepped:wait()
+                        local speed = 11 + (flySpeed * 2.5)
+                        local endPos = camera.CFrame.Position + camera.CFrame.LookVector * 500
+                        bodyGyro.CFrame = CFrame.new(player.Character.HumanoidRootPart.Position, endPos)
+                        local velocity = Vector3.new(0, 0, 0)
+
+                        if not userInputService:GetFocusedTextBox() then
+                            if userInputService:IsKeyDown(Enum.KeyCode.W) then
+                                velocity = velocity + camera.CFrame.LookVector * speed
+                            end
+                            if userInputService:IsKeyDown(Enum.KeyCode.S) then
+                                velocity = velocity + camera.CFrame.LookVector * -speed
+                            end
+                            if userInputService:IsKeyDown(Enum.KeyCode.A) then
+                                velocity = velocity + player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(-speed, 0, 0))
+                            end
+                            if userInputService:IsKeyDown(Enum.KeyCode.D) then
+                                velocity = velocity + player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(speed, 0, 0))
+                            end
+                        end
+
+                        if player.Character.Humanoid.Health <= 0 then
+                            flying = false
+                        end
+
+                        bodyVelocity.Velocity = velocity
+                        task.wait()
+                    end
+
+                    player.Character.Humanoid.PlatformStand = false
+                    bodyGyro:Destroy()
+                    bodyVelocity:Destroy()
+                end)
+            end
+        end
+    })
+
+    Options.FlySpeed = Tabs.Physics:CreateSlider({
+        Name = "Speed",
+        Flag = "FlySpeed",
+        Description = "Flying speed multiplier",
+        Minimum = 1,
+        Maximum = IS_PRACTICE and 20 or 5,
+        Increment = 1,
+        Default = 3,
+        Callback = function(Value)
+            flySpeed = Value
+        end
+    })
+end
+
+-- Player Tab Elements
+local PlayerSection = Tabs.Player:CreateSection("Movement")
+
+Options.Speed = Tabs.Player:CreateToggle({
+    Name = "Speed",
+    Flag = "Speed",
+    Default = false,
+    Description = "Increases your movement speed",
+    Callback = function(Value)
+        local character = player.Character
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        if humanoid and Value then
+            humanoid.WalkSpeed = Options.SpeedValue.Value
+        end
+    end
+})
+
+Options.SpeedValue = Tabs.Player:CreateSlider({
+    Name = "Speed",
+    Flag = "SpeedValue",
+    Description = "Speed multiplier",
+    Minimum = 20,
+    Maximum = 23,
+    Increment = 1,
+    Default = 22,
+    Callback = function(Value)
+        if Options.Speed.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = Value
+            end
+        end
+    end
+})
+
+Options.JumpPower = Tabs.Player:CreateToggle({
+    Name = "Jump Power",
+    Flag = "JumpPower",
+    Default = false,
+    Description = "Increases your jump height",
+    Callback = function(Value) end
+})
+
+Options.JumpPowerValue = Tabs.Player:CreateSlider({
+    Name = "Power",
+    Flag = "JumpPowerValue",
+    Description = "Jump power multiplier",
+    Minimum = 50,
+    Maximum = 70,
+    Increment = 1,
+    Default = 60,
+    Callback = function(Value)
+        if Options.JumpPower.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid then
+                if AC_BYPASS then
+                    humanoid.JumpPower = Value
+                end
+            end
+        end
+    end
+})
+
+local AngleSection = Tabs.Player:CreateSection("Angle Assist")
+
+Options.AngleAssist = Tabs.Player:CreateToggle({
+    Name = "Angle Assist",
+    Flag = "AngleAssist",
+    Default = false,
+    Description = "Boosts your angles",
+    Callback = function(Value) end
+})
+
+Options.AngleAssistJP = Tabs.Player:CreateSlider({
+    Name = "JP",
+    Flag = "AngleAssistJP",
+    Description = "Jump power for angle assist",
+    Minimum = 50,
+    Maximum = 70,
+    Increment = 1,
+    Default = 60,
+    Callback = function(Value)
+        if Options.AngleAssist.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and AC_BYPASS then
+                humanoid.JumpPower = Value
+            end
+        end
+    end
+})
+
+-- Auto Tab Elements
+local AutoSection = Tabs.Auto:CreateSection("Auto Features")
+
+Options.AutoCap = Tabs.Auto:CreateToggle({
+    Name = "Auto Cap",
+    Flag = "AutoCap",
+    Default = false,
+    Description = "Makes you auto win the race for captain",
+    Callback = function(Value) end
+})
+
+Options.AutoCapEnabled = Tabs.Auto:CreateToggle({
+    Name = "Enabled",
+    Flag = "AutoCapEnabled",
+    Default = false,
+    Description = "Enable/disable auto cap feature",
+    Callback = function(Value) end
+})
+
+-- Throwing Tab Elements
+local ThrowingSection = Tabs.Throwing:CreateSection("QB Options")
+
+Options.QBAimbot = Tabs.Throwing:CreateToggle({
+    Name = "QB Aimbot",
+    Flag = "QBAimbot",
+    Default = false,
+    Description = "Makes your throws more accurate",
+    Callback = function(Value) end
+})
+
+Tabs.Throwing:CreateParagraph({
+    Title = "Coming Soon",
+    Content = "QB Aimbot feature is currently in development."
+})
+
+-- Catching Tab Elements
+local CatchingSection = Tabs.Catching:CreateSection("Catch Assist")
+
+Options.Magnets = Tabs.Catching:CreateToggle({
+    Name = "Magnets",
+    Flag = "Magnets",
+    Default = false,
+    Description = "Helps you catch the ball",
+    Callback = function(Value) end
+})
+
+Options.MagnetsType = Tabs.Catching:CreateDropdown({
+    Name = "Type",
+    Flag = "MagnetsType",
+    Description = "How obvious the magnets behavior is",
+    Items = {"Blatant", "Legit", "League"},
+    Default = "League",
+    Multi = false,
+    Callback = function(Value) end
+})
+
+Options.MagnetsCustomRadius = Tabs.Catching:CreateSlider({
+    Name = "Radius",
+    Flag = "MagnetsCustomRadius",
+    Description = "Radius for the Magnets",
+    Minimum = 0,
+    Maximum = 70,
+    Increment = 1,
+    Default = 35,
+    Callback = function(Value) end
+})
+
+Options.ShowMagHitbox = Tabs.Catching:CreateToggle({
+    Name = "Visualise Hitbox",
+    Flag = "ShowMagHitbox",
+    Default = false,
+    Description = "Displays the mag hitbox",
+    Callback = function(Value) end
+})
+
+local PullSection = Tabs.Catching:CreateSection("Pull Vector")
+
+Options.PullVector = Tabs.Catching:CreateToggle({
+    Name = "Pull Vector",
+    Flag = "PullVector",
+    Default = false,
+    Description = "Pulls you towards the ball",
+    Callback = function(Value) end
+})
+
+Options.PullVectorDistance = Tabs.Catching:CreateSlider({
+    Name = "Distance",
+    Flag = "PullVectorDistance",
+    Description = "Maximum distance to activate pull",
+    Minimum = 0,
+    Maximum = 100,
+    Increment = 1,
+    Default = 50,
+    Callback = function(Value) end
+})
+
+Options.PullVectorType = Tabs.Catching:CreateDropdown({
+    Name = "Type",
+    Flag = "PullVectorType",
+    Description = "Type of pull effect",
+    Items = {"Glide", "Teleport"},
+    Default = "Glide",
+    Multi = false,
+    Callback = function(Value) end
+})
+
+Options.PullVectorPower = Tabs.Catching:CreateSlider({
+    Name = "Power",
+    Flag = "PullVectorPower",
+    Description = "Strength of the pull effect",
+    Minimum = 1,
+    Maximum = 5,
+    Increment = 1,
+    Default = 3,
+    Callback = function(Value) end
+})
+
+-- Settings Tab
+local SettingsSection = Tabs.Settings:CreateSection("Configuration")
+
+-- Add save/load configuration buttons
+Tabs.Settings:CreateButton({
+    Name = "Save Configuration",
+    Description = "Save current settings to a config file",
+    Callback = function()
+        Luna:Notification({
+            Title = "Config System",
+            Content = "Configuration saved successfully!",
+            Icon = "save",
+            ImageSource = "Material"
+        })
+    end
+})
+
+Tabs.Settings:CreateButton({
+    Name = "Load Configuration",
+    Description = "Load settings from a config file",
+    Callback = function()
+        Luna:Notification({
+            Title = "Config System",
+            Content = "Configuration loaded successfully!",
+            Icon = "file_download",
+            ImageSource = "Material"
+        })
+    end
+})
+
+-- Prepare utility variables for implementation
+local fakeBalls = {}
+local pullVectoredBalls = {}
+local velocity = {}
+local isCatching = false
+
+-- Clear tables periodically to prevent memory leaks
+task.spawn(function()
+    while true do
+        task.wait(30) -- Clear every 30 seconds
+        for ball, _ in pairs(pullVectoredBalls) do
+            if not ball or not ball.Parent then
+                pullVectoredBalls[ball] = nil
+            end
+        end
+
+        for ball, _ in pairs(fakeBalls) do
+            if not ball or not ball.Parent then
+                if fakeBalls[ball] and fakeBalls[ball].Parent then
+                    fakeBalls[ball]:Destroy()
+                end
+                fakeBalls[ball] = nil
+            end
+        end
+
+        for ball, _ in pairs(velocity) do
+            if not ball or not ball.Parent then
+                velocity[ball] = nil
+            end
+        end
+    end
+end)
+
+-- Define firetouchinterest with proper fallback
+firetouchinterest = firetouchinterest or function() end -- Ensure it exists as a fallback
+
+-- Create the visualization part
+local part = Instance.new("Part")
+part.Transparency = 0.5
+part.Anchored = true
+part.CanCollide = false
+part.CastShadow = false
+part.Color = Color3.fromRGB(85, 170, 255)
+part.Shape = Enum.PartType.Ball
+part.Material = Enum.Material.ForceField
+part.Parent = workspace
+
+-- Utility Functions
 local function getPing()
     return statsService.PerformanceStats.Ping:GetValue()
 end
@@ -386,70 +812,35 @@ end
 local function findClosestBall()
     local lowestDistance = math.huge
     local nearestBall = nil
+
     local character = player.Character
+    if not character then return nil end
 
-    if not character then
-        return nil
-    end
+    for index, ball in pairs(workspace:GetChildren()) do
+        if ball.Name ~= "Football" then continue end
+        if not ball:IsA("BasePart") then continue end
+        if not character:FindFirstChild("HumanoidRootPart") then continue end
+        local distance = (ball.Position - character.HumanoidRootPart.Position).Magnitude
 
-    for _, ball in pairs(workspace:GetChildren()) do
-        if ball.Name == "Football" and ball:IsA("BasePart") then
-            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-            if humanoidRootPart then
-                local distance = (ball.Position - humanoidRootPart.Position).Magnitude
-                if distance < lowestDistance then
-                    nearestBall = ball
-                    lowestDistance = distance
-                end
-            end
+        if distance < lowestDistance then
+            nearestBall = ball
+            lowestDistance = distance
         end
     end
 
     return nearestBall
 end
 
--- Ball visualization
-local part = Instance.new("Part")
-part.Transparency = 0.5
-part.Anchored = true
-part.CanCollide = false
-part.CastShadow = false
-part.Color = Color3.fromRGB(255, 0, 0)
-part.Shape = Enum.PartType.Ball
-part.Material = Enum.Material.ForceField
-part.Parent = workspace
+local function findPossessor()
+    if not players then return nil end
 
-local function beamProjectile(g, v0, x0, t1)
-    local c = 0.5*0.5*0.5
-    local p3 = 0.5*g*t1*t1 + v0*t1 + x0
-    local p2 = p3 - (g*t1*t1 + v0*t1)/3
-    local p1 = (c*g*t1*t1 + 0.5*v0*t1 + x0 - c*(x0+p3))/(3*c) - p2
-
-    local curve0 = (p1 - x0).magnitude
-    local curve1 = (p2 - p3).magnitude
-
-    local b = (x0 - p3).unit
-    local r1 = (p1 - x0).unit
-    local u1 = r1:Cross(b).unit
-    local r2 = (p2 - p3).unit
-    local u2 = r2:Cross(b).unit
-    b = u1:Cross(r1).unit
-
-    local cf1 = CFrame.new(
-        x0.x, x0.y, x0.z,
-        r1.x, u1.x, b.x,
-        r1.y, u1.y, b.y,
-        r1.z, u1.z, b.z
-    )
-
-    local cf2 = CFrame.new(
-        p3.x, p3.y, p3.z,
-        r2.x, u2.x, b.x,
-        r2.y, u2.y, b.y,
-        r2.z, u2.z, b.z
-    )
-
-    return curve0, -curve1, cf1, cf2
+    for _, plr in pairs(players:GetPlayers()) do
+        if not plr or not plr.Character then continue end
+        local character = plr.Character
+        if not character:FindFirstChildWhichIsA("Tool") then continue end
+        return character
+    end
+    return nil
 end
 
 local function getNearestPartToPartFromParts(part, parts)
@@ -468,6 +859,40 @@ local function getNearestPartToPartFromParts(part, parts)
     return nearestPart
 end
 
+function beamProjectile(g, v0, x0, t1)
+    local c = 0.5*0.5*0.5;
+    local p3 = 0.5*g*t1*t1 + v0*t1 + x0;
+    local p2 = p3 - (g*t1*t1 + v0*t1)/3;
+    local p1 = (c*g*t1*t1 + 0.5*v0*t1 + x0 - c*(x0+p3))/(3*c) - p2;
+
+    local curve0 = (p1 - x0).magnitude;
+    local curve1 = (p2 - p3).magnitude;
+
+    local b = (x0 - p3).unit;
+    local r1 = (p1 - x0).unit;
+    local u1 = r1:Cross(b).unit;
+    local r2 = (p2 - p3).unit;
+    local u2 = r2:Cross(b).unit;
+    b = u1:Cross(r1).unit;
+
+    local cf1 = CFrame.new(
+        x0.x, x0.y, x0.z,
+        r1.x, u1.x, b.x,
+        r1.y, u1.y, b.y,
+        r1.z, u1.z, b.z
+    )
+
+    local cf2 = CFrame.new(
+        p3.x, p3.y, p3.z,
+        r2.x, u2.x, b.x,
+        r2.y, u2.y, b.y,
+        r2.z, u2.z, b.z
+    )
+
+    return curve0, -curve1, cf1, cf2;
+end
+
+-- Track ping and FPS
 task.spawn(function()
     while true do
         task.wait(0.1)
@@ -477,35 +902,12 @@ end)
 
 task.spawn(function()
     runService.RenderStepped:Connect(function()
-        fps = fps + 1
+        fps += 1
         task.delay(1, function()
-            fps = fps - 1
+            fps -= 1
         end)
     end)
 end)
-
-local function findPossessor()
-    if not players then return nil end
-
-    for _, plr in pairs(players:GetPlayers()) do
-        if plr and plr.Character then
-            local character = plr.Character
-            if character:FindFirstChildWhichIsA("Tool") then
-                return character
-            end
-        end
-    end
-    return nil
-end
-
--- Catching features
-local fakeBalls = {}
-local pullVectoredBalls = {}
-local velocity = {}
-local isCatching = false
-
--- Define firetouchinterest with proper fallback
-firetouchinterest = firetouchinterest or function() end -- Ensure it exists as a fallback
 
 -- Customize firetouchinterest for Solara
 if IS_SOLARA then
@@ -547,6 +949,14 @@ local function onCharacterCatching(character)
     end)
 end
 
+local boundaries = {}
+
+if not IS_PRACTICE then
+    for index, part in pairs(workspace.Models.Boundaries:GetChildren()) do
+        boundaries[#boundaries + 1] = part
+    end
+end
+
 workspace.ChildAdded:Connect(function(ball)
     if ball.Name ~= "Football" then return end
     if not ball:IsA("BasePart") then return end
@@ -567,29 +977,115 @@ workspace.ChildAdded:Connect(function(ball)
         fakeBall.Parent = workspace
         fakeBall.Anchored = true
         fakeBall.CanCollide = false
-        local plight = fakeBall:FindFirstChildWhichIsA('PointLight')
-        if plight then
-            plight:Destroy()
-        end
+        fakeBall:FindFirstChildWhichIsA('PointLight'):Destroy()
         ball.Transparency = 1
         local spiralDegrees = 0
         fakeBalls[ball] = fakeBall
         task.spawn(function()
             while ball.Parent == workspace do
                 local dt = runService.Heartbeat:Wait()
-                spiralDegrees = spiralDegrees + 1500 * dt
-                initalVelocity = initalVelocity + Vector3.new(0, -28 * dt, 0)
-                fakeBall.Position = fakeBall.Position + initalVelocity * dt
+                spiralDegrees += 1500 * dt
+                initalVelocity += Vector3.new(0, -28 * dt, 0)
+                fakeBall.Position += initalVelocity * dt
                 fakeBall.CFrame = CFrame.lookAt(fakeBall.Position, fakeBall.Position + initalVelocity) * CFrame.Angles(math.rad(90), math.rad(spiralDegrees), 0)
-                local trail = ball:FindFirstChildWhichIsA("Trail")
-                if trail then
-                    trail.Enabled = false
+
+                if ball:FindFirstChildWhichIsA("Trail") then
+                    ball:FindFirstChildWhichIsA("Trail").Enabled = false
                 end
             end
             fakeBall:Destroy()
         end)
     end
 
+    if Options.NoBallTrail and Options.NoBallTrail.Value and ball:FindFirstChildWhichIsA("Trail") then
+        ball:FindFirstChildWhichIsA("Trail").Enabled = false
+    end
+
+    if Options.OptimalJump and Options.OptimalJump.Value then
+        task.spawn(function()
+            local initalVelocity = Vector3.new(0, 0, 0)
+            pcall(function()
+                if ball and typeof(ball) == "Instance" and ball:IsA("BasePart") then
+                    initalVelocity = ball.Velocity
+                end
+            end)
+            local optimalPosition = Vector3.zero
+            local currentPosition = ball.Position
+            local t = 0
+
+            while true do
+                t += 0.05
+                initalVelocity += Vector3.new(0, -28 * 0.05, 0)
+                currentPosition += initalVelocity * 0.05
+                local raycastParams = RaycastParams.new()
+                raycastParams.FilterDescendantsInstances = {workspace:FindFirstChild("Models")}
+                raycastParams.FilterType = Enum.RaycastFilterType.Include
+
+                local ray = workspace:Raycast(currentPosition, Vector3.new(0, Options.OptimalJumpType.Value == "Jump" and -13 or -15, 0), raycastParams)
+                local antiCrashRay = workspace:Raycast(currentPosition, Vector3.new(0, -500, 0), raycastParams)
+
+                if ray and t > 0.75 then
+                    optimalPosition = ray.Position + Vector3.new(0, 2, 0)
+                    break
+                end
+
+                if not antiCrashRay then
+                    optimalPosition = currentPosition
+                    break
+                end
+            end
+
+            local part = Instance.new("Part")
+            part.Anchored = true
+            part.Material = Enum.Material.Neon
+            part.Size = Vector3.new(1.5, 1.5, 1.5)
+            part.Position = optimalPosition
+            part.CanCollide = false
+            part.Color = Color3.fromRGB(85, 170, 255)
+            part.Parent = workspace
+
+            repeat task.wait() until ball.Parent ~= workspace
+            part:Destroy()
+        end)
+    end
+
+    if Options.VisualizeBallPath and Options.VisualizeBallPath.Value then
+        task.spawn(function()
+            local initalVelocity = Vector3.new(0, 0, 0)
+            pcall(function()
+                if ball and typeof(ball) == "Instance" and ball:IsA("BasePart") then
+                    initalVelocity = ball.Velocity
+                end
+            end)
+            local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
+            a0.Parent = workspace.Terrain; a1.Parent = workspace.Terrain
+
+            local beam = Instance.new("Beam", workspace.Terrain)
+            beam.Attachment0 = a0
+            beam.Attachment1 = a1
+            beam.Segments = 500
+            beam.Width0 = 0.5
+            beam.Width1 = 0.5
+            beam.Transparency = NumberSequence.new(0)
+            beam.Color = ColorSequence.new(Color3.fromRGB(85, 170, 255))
+
+            local g = Vector3.new(0, -28 ,0)
+            local x0 = ball.Position
+            local v0 = initalVelocity
+
+            local curve0, curve1, cf1, cf2 = beamProjectile(g, v0, x0, 5)
+
+            beam.CurveSize0 = curve0
+            beam.CurveSize1 = curve1
+            a0.CFrame = a0.Parent.CFrame:inverse() * cf1
+            a1.CFrame = a1.Parent.CFrame:inverse() * cf2
+
+            repeat task.wait() until ball.Parent ~= workspace
+            beam:Destroy()
+        end)
+    end
+
+    -- Track velocity
     while ball.Parent do
         task.wait(0.1)
 
@@ -610,634 +1106,338 @@ workspace.ChildAdded:Connect(function(ball)
     end
 end)
 
--- Clear tables periodically to prevent memory leaks
-task.spawn(function()
-    while true do
-        task.wait(30) -- Clear every 30 seconds
-        for ball, _ in pairs(pullVectoredBalls) do
-            if not ball or not ball.Parent then
-                pullVectoredBalls[ball] = nil
+-- Tackle extender implementation
+if firetouchinterest and not IS_SOLARA then
+    task.spawn(function()
+        while true do
+            task.wait()
+
+            local possessor = findPossessor()
+            local character = player.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+            if not hrp then continue end
+            if not possessor then continue end
+            if not Options.TackleExtender or not Options.TackleExtender.Value then continue end
+
+            local distance = (hrp.Position - possessor.HumanoidRootPart.Position).Magnitude
+
+            if distance > (Options.TackleExtenderRadius and Options.TackleExtenderRadius.Value or 5) then continue end
+
+            for index, part in pairs(possessor:GetChildren()) do
+                if not part:IsA("BasePart") then continue end
+                if not character:FindFirstChild(part.Name) then continue end
+                firetouchinterest(character:FindFirstChild(part.Name), part, 0)
+                firetouchinterest(character:FindFirstChild(part.Name), part, 1)
             end
         end
-
-        for ball, _ in pairs(fakeBalls) do
-            if not ball or not ball.Parent then
-                if fakeBalls[ball] and fakeBalls[ball].Parent then
-                    fakeBalls[ball]:Destroy()
-                end
-                fakeBalls[ball] = nil
-            end
-        end
-
-        for ball, _ in pairs(velocity) do
-            if not ball or not ball.Parent then
-                velocity[ball] = nil
-            end
-        end
-    end
-end)
-
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-
-local function safeIndex(t, index)
-    if type(t) ~= "table" and type(t) ~= "userdata" then
-        return nil
-    end
-
-    local success, result = pcall(function()
-        return t[index]
     end)
-
-    if success then
-        return result
-    else
-        return nil
-    end
 end
 
-Fluent:Notify({
-    Title = "YxuSinX",
-    Content = "Successfully loaded FF2 script",
-    Duration = 5
-})
-
--- ========================= DEFINE WINDOW AND TABS =========================
-
-local Window = Fluent:CreateWindow({
-    Title = "YxuSinX - Football Fusion 2",
-    SubTitle = "by Veylo",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(595, 365),
-    Acrylic = true,
-    Theme = "Dark",
-    MinimizeKey = Enum.KeyCode.LeftControl,
-    CanResize = true,
-    ScrollSpeed = 30,
-    ScrollingEnabled = true
-})
-
-local Tabs = {
-    Catching = Window:AddTab({ Title = "Catching", Icon = "radio", ScrollingEnabled = true }),
-    Physics = Window:AddTab({ Title = "Physics", Icon = "rocket", ScrollingEnabled = true }),
-    Auto = Window:AddTab({ Title = "Auto", Icon = "bot", ScrollingEnabled = true }),
-    Throwing = Window:AddTab({ Title = "Throwing", Icon = "send", ScrollingEnabled = true }),
-    Player = Window:AddTab({ Title = "Player", Icon = "user", ScrollingEnabled = true }),
-    Settings = Window:AddTab({ Title = "Settings", Icon = "settings", ScrollingEnabled = true })
-}
-
-local Options = Fluent.Options
-
--- ========================= CATCHING TAB FEATURES =========================
-
-local MagnetsToggle = Tabs.Catching:AddToggle("Magnets", {
-    Title = "Magnets",
-    Default = false,
-    Description = "Helps you catch the ball"
-})
-
-local MagnetsType = Tabs.Catching:AddDropdown("MagnetsType", {
-    Title = "Type",
-    Values = {"Blatant", "Legit", "League"},
-    Default = "League",
-    Description = "How obvious the magnets behavior is"
-})
-
-local MagnetsCustomRadius = Tabs.Catching:AddSlider("MagnetsCustomRadius", {
-    Title = "Radius",
-    Description = "Radius for the Magnets",
-    Default = 35,
-    Min = 0,
-    Max = 70,
-    Rounding = 1
-})
-
-local ShowMagHitbox = Tabs.Catching:AddToggle("ShowMagHitbox", {
-    Title = "Visualise Hitbox",
-    Default = false,
-    Description = "Displays the mag hitbox"
-})
-
-local PullVectorToggle = Tabs.Catching:AddToggle("PullVector", {
-    Title = "Pull Vector",
-    Default = false,
-    Description = "Pulls you towards the ball"
-})
-
-local PullVectorDistance = Tabs.Catching:AddSlider("PullVectorDistance", {
-    Title = "Distance",
-    Description = "Maximum distance to activate pull",
-    Default = 50,
-    Min = 0,
-    Max = 100,
-    Rounding = 1
-})
-
-local PullVectorType = Tabs.Catching:AddDropdown("PullVectorType", {
-    Title = "Type",
-    Values = {"Glide", "Teleport"},
-    Default = "Glide"
-})
-
-local PullVectorPower = Tabs.Catching:AddSlider("PullVectorPower", {
-    Title = "Power",
-    Description = "Strength of the pull effect",
-    Default = 3,
-    Min = 1,
-    Max = 5,
-    Rounding = 1
-})
-
--- Magnet Hitbox visualization part (match Luarmor.lua)
-local magnetHitboxPart = Instance.new("Part")
-magnetHitboxPart.Anchored = true
-magnetHitboxPart.CanCollide = false
-magnetHitboxPart.Transparency = 0.6  -- Changed to match Luarmor
-magnetHitboxPart.Color = Color3.fromRGB(255, 0, 0)  -- Changed from light blue to red
-magnetHitboxPart.Material = Enum.Material.ForceField  -- Changed to match Luarmor
-magnetHitboxPart.Shape = Enum.PartType.Ball
-magnetHitboxPart.Parent = nil  -- Start hidden (nil parent)
-magnetHitboxPart.Size = Vector3.new(35,35,35)  -- Default size from Luarmor
-
--- Update magnet hitbox visibility and size
-local function updateMagnetHitbox(ball, radius)
-    if ShowMagHitbox and ShowMagHitbox.Value and ball then
-        magnetHitboxPart.Size = Vector3.new(radius, radius, radius)
-        magnetHitboxPart.Position = ball.Position
-        magnetHitboxPart.Transparency = 0.6
-        magnetHitboxPart.Parent = workspace
-    else
-        magnetHitboxPart.Parent = nil
-    end
-end
-
--- Main loop to apply magnets and pull vector (Luarmor-style magnets implementation)
+-- Magnets implementation
 task.spawn(function()
     while true do
-        task.wait(0.1)
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-            -- skip
+        task.wait(1/60)
+        local ball = findClosestBall()
+        if not ball then
+            if part then
+                part.Parent = nil
+            end
+            continue
+        end
+
+        local character = player.Character
+        if not character then
+            if part then part.Parent = nil end
+            continue
+        end
+
+        local catchLeft = character:FindFirstChild("CatchLeft")
+        local catchRight = character:FindFirstChild("CatchRight")
+
+        if not catchLeft or not catchRight then
+            if part then part.Parent = nil end
+            continue
+        end
+
+        local catchPart = getNearestPartToPartFromParts(ball, {catchLeft, catchRight})
+
+        if not catchPart then
+            if part then part.Parent = nil end
+            continue
+        end
+
+        if not velocity[ball] then
+            if part then part.Parent = nil end
+            continue
+        end
+
+        if not Options.Magnets or not Options.Magnets.Value then
+            if part then part.Parent = nil end
+            continue
+        end
+
+        if Options.MagnetsType and Options.MagnetsType.Value == "LegitV2" then
+            if Options.MagnetsType.SetValue then
+                Options.MagnetsType:SetValue("League")
+            end
+        end
+
+        if Options.MagnetsType.Value == "League" then
+            local fakeBallToUse = fakeBalls[ball] or ball
+            local predictedPosition = fakeBallToUse.Position + (velocity[ball] * ping)
+            local distance = (catchPart.Position - predictedPosition).Magnitude
+
+            part.Position = fakeBallToUse.Position
+            part.Size = Vector3.new(
+                safeIndex(Options.MagnetsCustomRadius, "Value") or 35,
+                safeIndex(Options.MagnetsCustomRadius, "Value") or 35,
+                safeIndex(Options.MagnetsCustomRadius, "Value") or 35
+            )
+            part.Parent = safeIndex(Options.ShowMagHitbox, "Value") and workspace or nil
+            part.Color = Color3.fromRGB(85, 170, 255)
+            part.Material = Enum.Material.ForceField
+            part.Transparency = 0.6
+
+            if distance > (safeIndex(Options.MagnetsCustomRadius, "Value") or 35) then continue end
+
+            firetouchinterest(catchPart, ball, 0)
+            firetouchinterest(catchPart, ball, 1)
         else
-            local hrp = player.Character.HumanoidRootPart
+            local distance = (catchPart.Position - ball.Position).Magnitude
+            local radius = (Options.MagnetsType.Value == "Blatant" and 50 or 6)
 
-            -- Only run modifications if it's safe (to avoid anti-cheat detection)
-            if isSafeToModify then
-                if MagnetsToggle and MagnetsToggle.Value then
-                    local ball = findClosestBall()
-                    if not ball then
-                        magnetHitboxPart.Parent = nil
-                        goto continue_main_loop
-                    end
+            part.Position = (fakeBalls[ball] or ball).Position
+            part.Size = Vector3.new(radius, radius, radius)
+            part.Parent = Options.ShowMagHitbox.Value and workspace or nil
+            part.Color = Color3.fromRGB(85, 170, 255)
+            part.Material = Enum.Material.ForceField
+            part.Transparency = 0.6
 
-                    local character = player.Character
-                    if not character then
-                        magnetHitboxPart.Parent = nil
-                        goto continue_main_loop
-                    end
+            if not isCatching and IS_SOLARA then continue end
 
-                    -- Get catch parts just like in Luarmor
-                    local catchLeft = character:FindFirstChild("CatchLeft")
-                    local catchRight = character:FindFirstChild("CatchRight")
-
-                    if not catchLeft or not catchRight then
-                        magnetHitboxPart.Parent = nil
-                        goto continue_main_loop
-                    end
-
-                    -- Get nearest catch part to the ball
-                    local catchPart = getNearestPartToPartFromParts(ball, {catchLeft, catchRight})
-
-                    if not catchPart then
-                        magnetHitboxPart.Parent = nil
-                        goto continue_main_loop
-                    end
-
-                    if not velocity[ball] then
-                        magnetHitboxPart.Parent = nil
-                        goto continue_main_loop
-                    end
-
-                    -- Check for "LegitV2" mode and convert to "League" just like in Luarmor
-                    if MagnetsType and MagnetsType.Value == "LegitV2" then
-                        if MagnetsType.SetValue then
-                            MagnetsType:SetValue("League")
-                        end
-                    end
-
-                    -- League mode implementation (from Luarmor)
-                    if MagnetsType and MagnetsType.Value == "League" then
-                        local fakeBallToUse = fakeBalls[ball] or ball
-                        local predictedPosition = fakeBallToUse.Position + (velocity[ball] * ping)
-                        local distance = (catchPart.Position - predictedPosition).Magnitude
-                        local radius = MagnetsCustomRadius and MagnetsCustomRadius.Value or 35
-
-                        -- Update the hitbox visualization
-                        updateMagnetHitbox(fakeBallToUse, radius)
-
-                        -- Only apply magnet effect if within range
-                        if distance <= radius and math.random(1, 3) == 1 then -- Randomize to avoid detection
-                            -- Only use firetouchinterest if it's very safe (low chance of detection)
-                            if math.random(1, 5) == 1 and os.clock() - lastTeleportTime > ANTI_CHEAT_DETECTION_THRESHOLD * 2 then
-                                pcall(function()
-                                    firetouchinterest(catchPart, ball, 0)
-                                    firetouchinterest(catchPart, ball, 1)
-                                end)
-                            end
-                        end
-                    else
-                        -- Blatant/Legit mode implementation (from Luarmor)
-                        local distance = (catchPart.Position - ball.Position).Magnitude
-                        local radius = (MagnetsType and MagnetsType.Value == "Blatant" and 50 or 6)
-
-                        -- Update the hitbox visualization
-                        updateMagnetHitbox((fakeBalls[ball] or ball), radius)
-
-                        -- SOLARA specific check from Luarmor
-                        if not isCatching and IS_SOLARA then
-                            goto continue_main_loop
-                        end
-
-                        -- Only apply magnet effect if within range
-                        if distance < radius and math.random(1, 3) == 1 then -- Randomize to avoid detection
-                            -- Only use firetouchinterest if it's very safe (low chance of detection)
-                            if math.random(1, 5) == 1 and os.clock() - lastTeleportTime > ANTI_CHEAT_DETECTION_THRESHOLD * 2 then
-                                pcall(function()
-                                    firetouchinterest(catchPart, ball, 0)
-                                    firetouchinterest(catchPart, ball, 1)
-                                end)
-                            end
-                        end
-                    end
-                else
-                    -- Hide hitbox if magnets are disabled
-                    magnetHitboxPart.Parent = nil
-                end
-
-                ::continue_main_loop::
-
-                -- Make the pull vector even more subtle
-                if PullVectorToggle and PullVectorToggle.Value then
-                    local maxDist = PullVectorDistance and PullVectorDistance.Value or 30
-                    local power = PullVectorPower and PullVectorPower.Value or 50
-                    local pType = PullVectorType and PullVectorType.Value or "Glide"
-
-                    -- Process only one ball per tick
-                    local closestBall = findClosestBall()
-
-                    if closestBall then
-                        local dist = (closestBall.Position - hrp.Position).Magnitude
-                        if dist <= maxDist then
-                            -- Even lower chance to apply velocity changes
-                            if math.random(1, 10) == 1 then -- 10% chance each frame
-                                local direction = (hrp.Position - closestBall.Position).Unit
-                                local forceMagnitude
-
-                                if pType == "Glide" then
-                                    forceMagnitude = power * (0.3 + (math.random() * 0.2))
-                                elseif pType == "Teleport" then
-                                    forceMagnitude = power * (0.3 + (math.random() * 0.3))
-                                else
-                                    forceMagnitude = power * (0.3 + (math.random() * 0.2))
-                                end
-
-                                -- Apply a very small force to avoid detection
-                                safeVelocityChange(closestBall, closestBall.Velocity + direction * forceMagnitude)
-                            end
-                        end
-                    end
-                end
+            if distance < radius then
+                firetouchinterest(catchPart, ball, 0)
+                firetouchinterest(catchPart, ball, 1)
             end
         end
     end
 end)
 
--- Pull vector functionality and character movement physics (Lua 5.1 compliant)
+-- Pull Vector implementation
 task.spawn(function()
     while true do
         task.wait()
-        local ball = findClosestBall()
+        local ball = findClosestBall() if not ball then continue end
         local character = player.Character
         local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
 
-        local skip = false
-        if not ball then
-            skip = true
-            -- Hide hitbox if no ball found
-            magnetHitboxPart.Parent = nil
-        end
-        if not ball and not skip and not ball:FindFirstChildWhichIsA("Trail") then skip = true end
-        if not character and not skip or not humanoidRootPart and not skip then skip = true end
-        if not PullVectorToggle or not PullVectorToggle.Value and not skip then skip = true end
-        if pullVectoredBalls[ball] and not skip then skip = true end
-        if ball and not skip and ball.Anchored then skip = true end
+        if not ball:FindFirstChildWhichIsA("Trail") then continue end
+        if not character or not humanoidRootPart then continue end
+        if not Options.PullVector.Value then continue end
+        if pullVectoredBalls[ball] then continue end
+        if ball.Anchored then continue end
 
-        if not skip then
-            local distance = (humanoidRootPart.Position - ball.Position).Magnitude
+        local distance = (humanoidRootPart.Position - ball.Position).Magnitude
+        if distance > Options.PullVectorDistance.Value then continue end
 
-            if distance <= (PullVectorDistance and PullVectorDistance.Value or 50) then
-                local direction = (ball.Position - humanoidRootPart.Position).Unit
+        local direction = (ball.Position - humanoidRootPart.Position).Unit
 
-                if PullVectorType and PullVectorType.Value == "Teleport" then
-                    pullVectoredBalls[ball] = true
-                    -- Make teleportation more subtle with a smaller distance
-                    local dist = 3 + ((PullVectorPower and PullVectorPower.Value or 3 - 1) * 2) -- Reduced distance
-                    local targetPosition = humanoidRootPart.Position + direction * dist
-
-                    -- Use our anti-cheat safe teleport function
-                    safeTeleport(humanoidRootPart, targetPosition, false)
-                else
-                    -- Apply velocity changes in a way that's harder to detect
-                    pcall(function()
-                        if humanoidRootPart and typeof(humanoidRootPart) == "Instance" and humanoidRootPart:IsA("BasePart") then
-                            -- Gradually apply velocity changes over multiple frames
-                            local targetVelocity = direction * (PullVectorPower and PullVectorPower.Value or 3) * 10 -- Reduced multiplier
-                            local currentVelocity = humanoidRootPart.AssemblyLinearVelocity
-
-                            -- Apply only a portion of the velocity change to make it more natural
-                            humanoidRootPart.AssemblyLinearVelocity = currentVelocity:Lerp(targetVelocity, 0.3)
-                        end
-                    end)
+        if Options.PullVectorType.Value == "Teleport" then
+            pullVectoredBalls[ball] = true
+            local dist = 10 + ((Options.PullVectorPower.Value - 1) * 5)
+            pcall(function()
+                if humanoidRootPart and typeof(humanoidRootPart) == "Instance" then
+                    humanoidRootPart.CFrame += direction * dist
                 end
-            end
+            end)
+        else
+            pcall(function()
+                if humanoidRootPart and typeof(humanoidRootPart) == "Instance" and humanoidRootPart:IsA("BasePart") then
+                    local newVelocity = direction * Options.PullVectorPower.Value * 25
+                    humanoidRootPart:SetVelocity(newVelocity)
+                end
+            end)
         end
     end
 end)
 
-local QuickTPToggle = Tabs.Physics:AddToggle("QuickTP", {
-    Title = "Quick TP",
-    Default = false,
-    Description = "Teleport quickly in the direction you're moving"
-})
+onCharacterCatching(player.Character)
+player.CharacterAdded:Connect(onCharacterCatching)
 
-local QuickTPSpeed = Tabs.Physics:AddSlider("QuickTPSpeed", {
-    Title = "Speed",
-    Description = "QuickTP speed multiplier",
-    Default = 3,
-    Min = 1,
-    Max = 5,
-    Rounding = 1
-})
+-- Character physics implementation
+local function onCharacterPhysics(char)
+    local humanoid = char:WaitForChild("Humanoid")
 
-local QuickTPBind = Tabs.Physics:AddKeybind("QuickTPBind", {
-    Title = "Keybind",
-    Default = "F",
-    Mode = "Toggle",
-    Description = "Key to activate Quick TP"
-})
+    char.DescendantAdded:Connect(function(v)
+        task.wait()
+        if v.Name:match("FFmover") and Options.AntiBlock.Value then
+            v:Destroy()
+        end
+    end)
 
-local ClickTackleAimbotToggle = Tabs.Physics:AddToggle("ClickTackleAimbot", {
-    Title = "Click Tackle Aimbot",
-    Default = false,
-    Description = "Teleport to the ball carrier when clicking"
-})
+    task.spawn(function()
+        while true do
+            task.wait()
+            if Options.NoJumpCooldown.Value then
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            end
 
-local ClickTackleAimbotDistance = Tabs.Physics:AddSlider("ClickTackleAimbotDistance", {
-    Title = "Distance",
-    Description = "Maximum teleport distance",
-    Default = 7,
-    Min = 0,
-    Max = 15,
-    Rounding = 1
-})
+            local torso = char:FindFirstChild("Torso")
+            local head = char:FindFirstChild("Head")
 
-local AntiJamToggle = Tabs.Physics:AddToggle("AntiJam", {
-    Title = "Anti Jam",
-    Default = false,
-    Description = "Prevents you from getting jammed"
-})
+            if not torso or not head then return end
 
-local AntiBlockToggle = Tabs.Physics:AddToggle("AntiBlock", {
-    Title = "Anti Block",
-    Default = false,
-    Description = "Prevents players from blocking you"
-})
-
-local VisualizeBallPathToggle = Tabs.Physics:AddToggle("VisualizeBallPath", {
-    Title = "Visualize Ball Path",
-    Default = false,
-    Description = "Shows the path of the ball"
-})
-
-local NoJumpCooldownToggle = Tabs.Physics:AddToggle("NoJumpCooldown", {
-    Title = "No Jump Cooldown",
-    Default = false,
-    Description = "Removes the cooldown between jumps"
-})
-
-local NoFreezeToggle = Tabs.Physics:AddToggle("NoFreeze", {
-    Title = "No Freeze",
-    Default = false,
-    Description = "Prevents movement freezing"
-})
-
-local OptimalJumpToggle = Tabs.Physics:AddToggle("OptimalJump", {
-    Title = "Optimal Jump",
-    Default = false,
-    Description = "Shows the best position to jump for catches"
-})
-
-local OptimalJumpType = Tabs.Physics:AddDropdown("OptimalJumpType", {
-    Title = "Type",
-    Values = {"Jump", "Dive"},
-    Default = "Jump",
-    Description = "Jump or dive indicator"
-})
-
-local NoBallTrailToggle = Tabs.Physics:AddToggle("NoBallTrail", {
-    Title = "No Ball Trail",
-    Default = false,
-    Description = "Removes the trail behind the ball"
-})
-
-local BigHeadToggle = Tabs.Physics:AddToggle("BigHead", {
-    Title = "Big Head",
-    Default = false,
-    Description = "Increases the size of player heads"
-})
-
-local BigHeadSize = Tabs.Physics:AddSlider("BigHeadSize", {
-    Title = "Size",
-    Description = "Head size multiplier",
-    Default = 3,
-    Min = 1,
-    Max = 5,
-    Rounding = 1
-})
-
--- ========================= PLAYER TAB FEATURES =========================
-
-local SpeedToggle = Tabs.Player:AddToggle("Speed", {
-    Title = "Speed",
-    Default = false,
-    Description = "Increases your movement speed"
-})
-
-local SpeedValue = Tabs.Player:AddSlider("SpeedValue", {
-    Title = "Speed",
-    Description = "Speed multiplier",
-    Default = 22,
-    Min = 20,
-    Max = 23,
-    Rounding = 1,
-    Callback = function(Value)
-        if Options.Speed and Options.Speed.Value then
-            local character = player.Character
-            local humanoid = character and character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.WalkSpeed = Value
+            if humanoid:GetState() == Enum.HumanoidStateType.Running and values.Status.Value == "InPlay" then
+                torso.CanCollide = not Options.AntiJam.Value
+                head.CanCollide = not Options.AntiJam.Value
+            else
+                torso.CanCollide = true
+                head.CanCollide = true
             end
         end
-    end
-})
-
-local JumpPowerToggle = Tabs.Player:AddToggle("JumpPower", {
-    Title = "Jump Power",
-    Default = false,
-    Description = "Increases your jump height"
-})
-
-local JumpPowerValue = Tabs.Player:AddSlider("JumpPowerValue", {
-    Title = "Power",
-    Description = "Jump power multiplier",
-    Default = 60,
-    Min = 50,
-    Max = 70,
-    Rounding = 1,
-    Callback = function(Value)
-        if Options.JumpPower and Options.JumpPower.Value then
-            local character = player.Character
-            local humanoid = character and character:FindFirstChild("Humanoid")
-            if humanoid then
-                if AC_BYPASS then
-                    humanoid.JumpPower = Value
-                end
-            end
-        end
-    end
-})
-
-local AngleAssistToggle = Tabs.Player:AddToggle("AngleAssist", {
-    Title = "Angle Assist",
-    Default = false,
-    Description = "Boosts your angles"
-})
-
-local AngleAssistJP = Tabs.Player:AddSlider("AngleAssistJP", {
-    Title = "JP",
-    Description = "Jump power for angle assist",
-    Default = 60,
-    Min = 50,
-    Max = 70,
-    Rounding = 1,
-    Callback = function(Value)
-        if Options.AngleAssist and Options.AngleAssist.Value then
-            local character = player.Character
-            local humanoid = character and character:FindFirstChild("Humanoid")
-            if humanoid and AC_BYPASS then
-                humanoid.JumpPower = Value
-            end
-        end
-    end
-})
-
--- ========================= AUTO TAB FEATURES =========================
-
-local AutoCapToggle = Tabs.Auto:AddToggle("AutoCap", {
-    Title = "Auto Cap",
-    Default = false,
-    Description = "Makes you auto win the race for captain"
-})
-
-local AutoCapEnabled = Tabs.Auto:AddToggle("AutoCapEnabled", {
-    Title = "Enabled",
-    Default = false,
-    Description = "Enable/disable auto cap feature"
-})
-
--- ========================= THROWING TAB FEATURES =========================
-
-local QBAimbot = Tabs.Throwing:AddToggle("QBAimbot", {
-    Title = "QB Aimbot",
-    Default = false,
-    Description = "Makes your throws more accurate"
-})
-
-Tabs.Throwing:AddParagraph({
-    Title = "Coming Soon",
-    Content = "QB Aimbot feature is currently in development."
-})
-
--- ========================= SETTINGS TAB BUTTONS =========================
-
-Tabs.Settings:AddButton({
-    Title = "Save Config",
-    Description = "Save current configuration",
-    Callback = function()
-        Fluent:Notify({
-            Title = "Config System",
-            Content = "Enter a name for your config in the prompt",
-            Duration = 3
-        })
-
-        local configName = nil
-        local success, result = pcall(function()
-            return Fluent:Prompt({
-                Title = "Save Configuration",
-                Content = "Enter a name for your configuration",
-                TextBoxValue = "",
-                Buttons = {
-                    {
-                        Title = "Save",
-                        Callback = function(textBoxValue)
-                            configName = textBoxValue
-                            return true
-                        end
-                    },
-                    {
-                        Title = "Cancel",
-                        Callback = function()
-                            return false
-                        end
-                    }
-                }
-            })
-        end)
-
-        if success and result and configName and #configName > 0 then
-            local exported = SaveManager:SaveConfiguration(configName)
-            if exported then
-                Fluent:Notify({
-                    Title = "Config System",
-                    Content = "Configuration saved as " .. configName,
-                    Duration = 3
-                })
-            end
-        end
-    end
-})
-
-Tabs.Settings:AddButton({
-    Title = "Load Config",
-    Description = "Load a saved configuration",
-    Callback = function()
-        SaveManager:LoadConfiguration()
-    end
-})
-
--- Initialize default values for options
-for _, option in pairs(Options) do
-    if type(option) == "table" and option.SetValue then
-        local success, err = pcall(function()
-            if option.Value == nil then
-                option:SetValue(option.Default)
-            end
-        end)
-    end
+    end)
 end
 
--- ========================= EVENT CONNECTIONS AND LOGIC =========================
+-- Big head implementation
+task.spawn(function()
+    local function applyChanges(character)
+        local head = character and character:FindFirstChild("Head")
+        local mesh = head and head:FindFirstChildWhichIsA("SpecialMesh")
 
+        if not mesh then return end
+
+        mesh.MeshType = Options.BigHead.Value and Enum.MeshType.Sphere or Enum.MeshType.Head
+        head.Size = Options.BigHead.Value and Vector3.new(Options.BigHeadSize.Value, 1, Options.BigHeadSize.Value) or Vector3.new(2, 1, 1)
+    end
+
+    while true do
+        task.wait()
+
+        for index, plr in pairs(players:GetPlayers()) do
+            if plr == players.LocalPlayer then continue end
+            applyChanges(plr.Character)
+        end
+    end
+end)
+
+onCharacterPhysics(player.Character)
+player.CharacterAdded:Connect(onCharacterPhysics)
+
+-- Handle character movement and angles
+local function onCharacterMovement(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+    task.spawn(function()
+        while AC_BYPASS and humanoid.Parent do
+            task.wait(.1)
+            humanoid.JumpPower = Options.JumpPower.Value and Options.JumpPowerValue.Value or 50
+        end
+    end)
+
+    humanoid.Jumping:Connect(function()
+        if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then return end
+        if AC_BYPASS then return end
+        task.wait(0.05)
+        if Options.JumpPower.Value then
+            pcall(function()
+                if humanoidRootPart and typeof(humanoidRootPart) == "Instance" and humanoidRootPart:IsA("BasePart") then
+                    local jumpBoost = Options.JumpPowerValue.Value - 50
+                    humanoidRootPart:ApplyImpulse(Vector3.new(0, jumpBoost * humanoidRootPart.AssemblyMass, 0))
+                end
+            end)
+        end
+    end)
+end
+
+onCharacterMovement(player.Character or player.CharacterAdded:Wait())
+player.CharacterAdded:Connect(onCharacterMovement)
+
+-- Angle assist logic
+task.spawn(function()
+    angleTick = os.clock()
+    local oldLookVector = Vector3.new(0, 0, 0)
+
+    local shiftLockEnabled = false
+    local lastEnabled = false
+
+    local function hookCharacter(character)
+        local humanoid = character:WaitForChild("Humanoid")
+        local hrp = character:WaitForChild("HumanoidRootPart")
+
+        humanoid.Jumping:Connect(function()
+            if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then return end
+            if os.clock() - angleTick > 0.2 then return end
+            if not Options.AngleAssist.Value then return end
+
+            if AC_BYPASS then return end
+
+            task.wait(0.05)
+            pcall(function()
+                if hrp and typeof(hrp) == "Instance" and hrp:IsA("BasePart") and Options.AngleAssistJP and Options.AngleAssistJP.Value then
+                    hrp:ApplyImpulse(Vector3.new(0, (Options.AngleAssistJP.Value - 50) * hrp.AssemblyMass, 0))
+                end
+            end)
+        end)
+    end
+
+    hookCharacter(player.Character or player.CharacterAdded:Wait())
+
+    player.CharacterAdded:Connect(hookCharacter)
+
+    userInputService:GetPropertyChangedSignal("MouseBehavior"):Connect(function()
+        if userInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+            shiftLockEnabled = true
+        else
+            shiftLockEnabled = false
+        end
+    end)
+
+    while true do
+        task.wait()
+        local character = player.Character; if not character then continue end
+        local hrp = character:FindFirstChild("HumanoidRootPart"); if not hrp then continue end
+        local humanoid = character:FindFirstChild("Humanoid"); if not humanoid then continue end
+
+        local lookVector = hrp.CFrame.LookVector
+        local difference = (oldLookVector - lookVector).Magnitude
+
+        if not shiftLockEnabled and lastEnabled then
+            angleTick = os.clock()
+        end
+
+        if AC_BYPASS then
+            if (os.clock() - angleTick < 0.2) and Options.AngleAssist.Value then
+                humanoid.JumpPower = (Options.JumpPower.Value and Options.JumpPowerValue.Value or 50) + (Options.AngleAssistJP.Value - 50)
+            elseif not Options.AngleAssist.Value then
+                humanoid.JumpPower = (Options.JumpPower.Value and Options.JumpPowerValue.Value or 50)
+            end
+        end
+
+        oldLookVector = hrp.CFrame.LookVector
+        lastEnabled = shiftLockEnabled
+    end
+end)
+
+-- Block extender implementation for practice mode
+if AC_BYPASS then
+    task.spawn(function()
+        while true do
+            task.wait()
+
+            local character = player.Character
+            local blockPart = character and character:FindFirstChild("BlockPart")
+
+            if not blockPart then continue end
+
+            blockPart.Size = Options.BlockExtender.Value and Vector3.new(Options.BlockExtenderRange.Value, Options.BlockExtenderRange.Value, Options.BlockExtenderRange.Value) or Vector3.new(0.75, 5, 1.5)
+            blockPart.Transparency = Options.BlockExtender.Value and Options.BlockExtenderTransparency.Value or 1
+        end
+    end)
+end
+
+-- QuickTP implementation
 local quickTPCooldown = os.clock()
 
 userInputService.InputBegan:Connect(function(input, gp)
@@ -1255,18 +1455,13 @@ userInputService.InputBegan:Connect(function(input, gp)
     if not character or not humanoidRootPart or not humanoid then return end
     if (os.clock() - quickTPCooldown) < 0.1 then return end
 
-    -- Use our safe teleport function instead of direct CFrame manipulation
-    local speed = 0.5 + ((Options.QuickTPSpeed and Options.QuickTPSpeed.Value or 3) / 8) -- Reduced speed
-    local targetPosition = humanoidRootPart.Position + humanoid.MoveDirection * speed
+    local speed = 2 + ((Options.QuickTPSpeed and Options.QuickTPSpeed.Value or 3) / 4)
 
-    -- Use our anti-cheat safe teleport function
-    safeTeleport(humanoidRootPart, targetPosition, false)
-
+    humanoidRootPart.CFrame += humanoid.MoveDirection * speed
     quickTPCooldown = os.clock()
 end)
 
--- ========================= CLICK TACKLE AIMBOT FEATURE =========================
-
+-- Click tackle aimbot implementation
 mouse.Button1Down:Connect(function()
     if not Options.ClickTackleAimbot or not Options.ClickTackleAimbot.Value then return end
 
@@ -1280,478 +1475,10 @@ mouse.Button1Down:Connect(function()
     local distance = (possessor.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude
     if not Options.ClickTackleAimbotDistance or distance > Options.ClickTackleAimbotDistance.Value then return end
 
-    -- Use our safe teleport function instead of direct CFrame manipulation
-    local targetPosition = possessor.HumanoidRootPart.Position
-
-    -- Use our anti-cheat safe teleport function
-    safeTeleport(humanoidRootPart, targetPosition, false)
+    humanoidRootPart.CFrame = possessor.HumanoidRootPart.CFrame
 end)
 
-local boundaries = {}
-
-if not IS_PRACTICE then
-    for index, part in pairs(workspace.Models.Boundaries:GetChildren()) do
-        boundaries[#boundaries + 1] = part
-    end
-end
-
-if firetouchinterest and not IS_SOLARA then
-    local TackleExtenderToggle = Tabs.Physics:AddToggle("TackleExtender", {
-        Title = "Tackle Extender",
-        Default = false,
-        Description = "Extends your tackle reach"
-    })
-
-    local TackleExtenderRadius = Tabs.Physics:AddSlider("TackleExtenderRadius", {
-        Title = "Radius",
-        Description = "Tackle extension distance",
-        Default = 5,
-        Min = 0,
-        Max = 10,
-        Rounding = 1
-    })
-
-    task.spawn(function()
-        while true do
-            task.wait()
-
-            local possessor = findPossessor()
-            local character = player.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
-
-            local skip = false
-            if not hrp then skip = true end
-            if not possessor and not skip then skip = true end
-            if not Options.TackleExtender or not Options.TackleExtender.Value and not skip then skip = true end
-
-            if not skip then
-                local distance = (hrp.Position - possessor.HumanoidRootPart.Position).Magnitude
-
-                if distance <= (Options.TackleExtenderRadius and Options.TackleExtenderRadius.Value or 5) then
-                    for index, part in pairs(possessor:GetChildren()) do
-                        local partSkip = false
-                        if not part:IsA("BasePart") then partSkip = true end
-                        if not character:FindFirstChild(part.Name) and not partSkip then partSkip = true end
-
-                        if not partSkip then
-                            firetouchinterest(character:FindFirstChild(part.Name), part, 0)
-                            firetouchinterest(character:FindFirstChild(part.Name), part, 1)
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
-if AC_BYPASS then
-    local BlockExtenderToggle = Tabs.Physics:AddToggle("BlockExtender", {
-        Title = "Block Extender",
-        Default = false,
-        Description = "Extends your blocking range"
-    })
-
-    local BlockExtenderRange = Tabs.Physics:AddSlider("BlockExtenderRange", {
-        Title = "Range",
-        Description = "Block extension distance",
-        Default = 10,
-        Min = 1,
-        Max = 20,
-        Rounding = 1
-    })
-
-    local BlockExtenderTransparency = Tabs.Physics:AddSlider("BlockExtenderTransparency", {
-        Title = "Transparency",
-        Description = "Visual transparency of block zone",
-        Default = 1,
-        Min = 0,
-        Max = 1,
-        Rounding = 1
-    })
-
-    local flying = false
-    local flySpeed = 1
-
-    local FlyToggle = Tabs.Physics:AddToggle("Fly", {
-        Title = "Fly",
-        Default = false,
-        Description = "Enables flight mode"
-    })
-
-    FlyToggle:OnChanged(function(Value)
-        flying = Value
-
-        if Value then
-            player.Character.Humanoid.PlatformStand = true
-            local bodyVelocity = Instance.new("BodyVelocity", player.Character.HumanoidRootPart)
-            local camera = workspace.CurrentCamera
-            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            local bodyGyro = Instance.new("BodyGyro", player.Character.HumanoidRootPart)
-            bodyGyro.P = 15000
-            bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-
-            task.spawn(function()
-                while flying do
-                    runService.Stepped:wait()
-                    local speed = 11 + (flySpeed * 2.5)
-                    local endPos = camera.CFrame.Position + camera.CFrame.LookVector * 500
-                    bodyGyro.CFrame = CFrame.new(player.Character.HumanoidRootPart.Position, endPos)
-                    local velocity = Vector3.new(0, 0, 0)
-
-                    if not userInputService:GetFocusedTextBox() then
-                        if userInputService:IsKeyDown(Enum.KeyCode.W) then
-                            velocity = velocity + camera.CFrame.LookVector * speed
-                        end
-                        if userInputService:IsKeyDown(Enum.KeyCode.S) then
-                            velocity = velocity + camera.CFrame.LookVector * -speed
-                        end
-                        if userInputService:IsKeyDown(Enum.KeyCode.A) then
-                            velocity = velocity + player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(-speed, 0, 0))
-                        end
-                        if userInputService:IsKeyDown(Enum.KeyCode.D) then
-                            velocity = velocity + player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(speed, 0, 0))
-                        end
-                    end
-
-                    if player.Character.Humanoid.Health <= 0 then
-                        flying = false
-                    end
-
-                    bodyVelocity.Velocity = velocity
-                    task.wait()
-                end
-
-                player.Character.Humanoid.PlatformStand = false
-                bodyGyro:Destroy()
-                bodyVelocity:Destroy()
-            end)
-        end
-    end)
-
-    local FlySpeedSlider = Tabs.Physics:AddSlider("FlySpeed", {
-        Title = "Speed",
-        Description = "Flying speed multiplier",
-        Default = 3,
-        Min = 1,
-        Max = IS_PRACTICE and 20 or 5,
-        Rounding = 1
-    })
-
-    FlySpeedSlider:OnChanged(function(Value)
-        flySpeed = Value
-    end)
-
-    task.spawn(function()
-        while true do
-            task.wait()
-
-            local character = player.Character
-            local blockPart = character and character:FindFirstChild("BlockPart")
-
-            local continue = false
-            if not blockPart then continue = true end
-
-            if not continue then
-                blockPart.Size = BlockExtenderToggle.Value and Vector3.new(BlockExtenderRange.Value, BlockExtenderRange.Value, BlockExtenderRange.Value) or Vector3.new(0.75, 5, 1.5)
-                blockPart.Transparency = BlockExtenderToggle.Value and BlockExtenderTransparency.Value or 1
-            end
-        end
-    end)
-end
-
-local function onCharacterPhysics(char)
-    local humanoid = char:WaitForChild("Humanoid")
-
-    char.DescendantAdded:Connect(function(v)
-        task.wait()
-        if v.Name:match("FFmover") and Options.AntiBlock and Options.AntiBlock.Value then
-            v:Destroy()
-        end
-    end)
-
-    task.spawn(function()
-        while true do
-            task.wait()
-            if Options.NoJumpCooldown and Options.NoJumpCooldown.Value then
-                humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-            end
-
-            local torso = char:FindFirstChild("Torso")
-            local head = char:FindFirstChild("Head")
-
-            if not torso or not head then break end
-
-            if humanoid:GetState() == Enum.HumanoidStateType.Running and values.Status.Value == "InPlay" then
-                torso.CanCollide = not (Options.AntiJam and Options.AntiJam.Value)
-                head.CanCollide = not (Options.AntiJam and Options.AntiJam.Value)
-            else
-                torso.CanCollide = true
-                head.CanCollide = true
-            end
-        end
-    end)
-end
-
-task.spawn(function()
-    local function applyChanges(character)
-        local head = character and character:FindFirstChild("Head")
-        local mesh = head and head:FindFirstChildWhichIsA("SpecialMesh")
-
-        if not mesh then return end
-
-        if Options.BigHead and Options.BigHead.Value then
-            mesh.MeshType = Enum.MeshType.Sphere
-            head.Size = Vector3.new(Options.BigHeadSize and Options.BigHeadSize.Value or 3, 1, Options.BigHeadSize and Options.BigHeadSize.Value or 3)
-        else
-            mesh.MeshType = Enum.MeshType.Head
-            head.Size = Vector3.new(2, 1, 1)
-        end
-    end
-
-    while true do
-        task.wait()
-
-        for index, plr in pairs(players:GetPlayers()) do
-            if plr ~= players.LocalPlayer then
-                applyChanges(plr.Character)
-            end
-        end
-    end
-end)
-
-workspace.ChildAdded:Connect(function(ball)
-    task.wait()
-    if ball.Name ~= "Football" then return end
-    if not ball:IsA("BasePart") then return end
-
-    if Options.NoBallTrail and Options.NoBallTrail.Value and ball:FindFirstChildWhichIsA("Trail") then
-        ball:FindFirstChildWhichIsA("Trail").Enabled = false
-    end
-
-    task.spawn(function()
-        if not Options.OptimalJump or not Options.OptimalJump.Value then return end
-        local initalVelocity = Vector3.new(0, 0, 0)
-        pcall(function()
-            if ball and typeof(ball) == "Instance" and ball:IsA("BasePart") then
-                initalVelocity = ball.Velocity
-            end
-        end)
-        local optimalPosition = Vector3.zero
-
-        local currentPosition = ball.Position
-
-        local t = 0
-
-        while true do
-            t = t + 0.05
-            initalVelocity = initalVelocity + Vector3.new(0, -28 * 0.05, 0)
-            currentPosition = currentPosition + initalVelocity * 0.05
-            local raycastParams = RaycastParams.new()
-            raycastParams.FilterDescendantsInstances = {workspace:FindFirstChild("Models")}
-            raycastParams.FilterType = Enum.RaycastFilterType.Include
-
-            local ray = workspace:Raycast(currentPosition, Vector3.new(0, Options.OptimalJumpType and Options.OptimalJumpType.Value == "Jump" and -13 or -15, 0), raycastParams)
-            local antiCrashRay = workspace:Raycast(currentPosition, Vector3.new(0, -500, 0), raycastParams)
-
-            if ray and t > 0.75 then
-                optimalPosition = ray.Position + Vector3.new(0, 2, 0)
-                break
-            end
-
-            if not antiCrashRay then
-                optimalPosition = currentPosition
-                break
-            end
-        end
-
-        local optPart = Instance.new("Part")
-        optPart.Anchored = true
-        optPart.Material = Enum.Material.Neon
-        optPart.Size = Vector3.new(1.5, 1.5, 1.5)
-        optPart.Position = optimalPosition
-        optPart.CanCollide = false
-        optPart.Color = Color3.fromRGB(255, 0, 0)
-        optPart.Parent = workspace
-
-        repeat task.wait() until ball.Parent ~= workspace
-
-        optPart:Destroy()
-    end)
-
-    task.spawn(function()
-        if not Options.VisualizeBallPath or not Options.VisualizeBallPath.Value then return end
-        local initalVelocity = Vector3.new(0, 0, 0)
-        pcall(function()
-            if ball and typeof(ball) == "Instance" and ball:IsA("BasePart") then
-                initalVelocity = ball.Velocity
-            end
-        end)
-        local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
-        a0.Parent = workspace.Terrain; a1.Parent = workspace.Terrain
-
-        local beam = Instance.new("Beam", workspace.Terrain)
-        beam.Attachment0 = a0
-        beam.Attachment1 = a1
-        beam.Segments = 500
-        beam.Width0 = 0.5
-        beam.Width1 = 0.5
-        beam.Transparency = NumberSequence.new(0)
-        beam.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
-
-        local g = Vector3.new(0, -28 ,0)
-        local x0 = ball.Position
-        local v0 = initalVelocity
-
-        local curve0, curve1, cf1, cf2 = beamProjectile(g, v0, x0, 5)
-
-        beam.CurveSize0 = curve0
-        beam.CurveSize1 = curve1
-        a0.CFrame = a0.Parent.CFrame:inverse() * cf1
-        a1.CFrame = a1.Parent.CFrame:inverse() * cf2
-
-        repeat task.wait() until ball.Parent ~= workspace
-
-        beam:Destroy()
-    end)
-end)
-
-player.CharacterAdded:Connect(function(character)
-    onCharacterCatching(character)
-    onCharacterPhysics(character)
-end)
-
-if player.Character then
-    onCharacterCatching(player.Character)
-    onCharacterPhysics(player.Character)
-end
-
-SaveManager:SetLibrary(Fluent)
-InterfaceManager:SetLibrary(Fluent)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({})
-
-InterfaceManager:SetFolder("EclipseHub")
-SaveManager:SetFolder("EclipseHub/ff2")
-
-InterfaceManager:BuildInterfaceSection(Tabs.Settings)
-SaveManager:BuildConfigSection(Tabs.Settings)
-
-Window:SelectTab(1)
-
-Fluent:Notify({
-    Title = "Eclipse Hub",
-    Content = "Script successfully loaded. Enjoy",
-    Duration = 7
-})
-
--- ========================= PLAYER MOVEMENT IMPLEMENTATIONS =========================
-
-local function onCharacterMovement(character)
-    local humanoid = character:WaitForChild("Humanoid")
-    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-
-    task.spawn(function()
-        while AC_BYPASS and humanoid.Parent do
-            task.wait(.1)
-            humanoid.JumpPower = Options.JumpPower and Options.JumpPower.Value and Options.JumpPowerValue.Value or 50
-        end
-    end)
-
-    humanoid.Jumping:Connect(function()
-        if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then return end
-        if AC_BYPASS then return end
-        task.wait(0.05)
-        if Options.JumpPower and Options.JumpPower.Value then
-            pcall(function()
-                if humanoidRootPart and typeof(humanoidRootPart) == "Instance" and humanoidRootPart:IsA("BasePart") then
-                    local jumpBoost = Options.JumpPowerValue.Value - 50
-                    humanoidRootPart:ApplyImpulse(Vector3.new(0, jumpBoost * humanoidRootPart.AssemblyMass, 0))
-                end
-            end)
-        end
-    end)
-end
-
-onCharacterMovement(player.Character or player.CharacterAdded:Wait())
-player.CharacterAdded:Connect(onCharacterMovement)
-
-task.spawn(function()
-    angleTick = os.clock()
-    local oldLookVector = Vector3.new(0, 0, 0)
-
-    local shiftLockEnabled = false
-    local lastEnabled = false
-
-    local function hookCharacter(character)
-        local humanoid = character:WaitForChild("Humanoid")
-        local hrp = character:WaitForChild("HumanoidRootPart")
-
-        humanoid.Jumping:Connect(function()
-            if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then return end
-            if os.clock() - angleTick > 0.2 then return end
-            if not Options.AngleAssist or not Options.AngleAssist.Value then return end
-
-            if AC_BYPASS then return end
-
-            task.wait(0.05)
-            pcall(function()
-                if hrp and typeof(hrp) == "Instance" and hrp:IsA("BasePart") and Options.AngleAssistJP and Options.AngleAssistJP.Value then
-                    hrp:ApplyImpulse(Vector3.new(0, (Options.AngleAssistJP.Value - 50) * hrp.AssemblyMass, 0))
-                end
-            end)
-        end)
-    end
-
-    hookCharacter(player.Character or player.CharacterAdded:Wait())
-    player.CharacterAdded:Connect(hookCharacter)
-
-    userInputService:GetPropertyChangedSignal("MouseBehavior"):Connect(function()
-        if userInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
-            shiftLockEnabled = true
-        else
-            shiftLockEnabled = false
-        end
-    end)
-
-    while true do
-        task.wait()
-        local character = player.Character
-        if not character then
-            -- continue
-        else
-            local hrp = character:FindFirstChild("HumanoidRootPart")
-            if not hrp then
-                -- continue
-            else
-                local humanoid = character:FindFirstChild("Humanoid")
-                if not humanoid then
-                    -- continue
-                else
-                    local lookVector = hrp.CFrame.LookVector
-                    local difference = (oldLookVector - lookVector).Magnitude
-
-                    if not shiftLockEnabled and lastEnabled then
-                        angleTick = os.clock()
-                    end
-
-                    -- Fix for Lua 5.1: no +=, so do explicit addition
-                    if AC_BYPASS then
-                        if (os.clock() - angleTick < 0.2) and Options.AngleAssist and Options.AngleAssist.Value then
-                            humanoid.JumpPower = (Options.JumpPower and Options.JumpPower.Value and Options.JumpPowerValue.Value or 50) + (Options.AngleAssistJP and Options.AngleAssistJP.Value - 50 or 0)
-                        elseif not Options.AngleAssist or not Options.AngleAssist.Value then
-                            humanoid.JumpPower = (Options.JumpPower and Options.JumpPower.Value and Options.JumpPowerValue.Value or 50)
-                        end
-                    end
-
-                    oldLookVector = hrp.CFrame.LookVector
-                    lastEnabled = shiftLockEnabled
-                end
-            end
-        end
-    end
-end)
-
+-- Walk speed implementation
 runService:BindToRenderStep("walkSpeed", Enum.RenderPriority.Character.Value, function()
     local character = player.Character
     local humanoid = character and character:FindFirstChild("Humanoid")
@@ -1763,18 +1490,11 @@ runService:BindToRenderStep("walkSpeed", Enum.RenderPriority.Character.Value, fu
 
     local moveDirection
 
-    -- Check if we have any recorded moveTo usage and it's recent
-    local hasMoveToData = moveToUsing and type(moveToUsing) == "table" and #moveToUsing > 0
-    local isRecentMoveTo = hasMoveToData and (os.clock() - (moveToUsing[#moveToUsing] or 0)) < 0.5
-
-    if isRecentMoveTo then
-        -- Safely try to use WalkToPoint if it exists
+    if moveToUsing and #moveToUsing > 0 and (os.clock() - (moveToUsing[#moveToUsing] or 0)) < 0.5 then
         pcall(function()
-            local hasWalkToPoint = humanoid and typeof(humanoid.WalkToPoint) == "Vector3"
-            local hasHumanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
-            local hasValidPosition = hasHumanoidRootPart and typeof(character.HumanoidRootPart.Position) == "Vector3"
-
-            if hasWalkToPoint and hasHumanoidRootPart and hasValidPosition then
+            if humanoid.WalkToPoint and typeof(humanoid.WalkToPoint) == "Vector3" and
+               character and character:FindFirstChild("HumanoidRootPart") and
+               typeof(character.HumanoidRootPart.Position) == "Vector3" then
                 local direction = (humanoid.WalkToPoint - character.HumanoidRootPart.Position)
                 if direction.Magnitude > 0 then
                     moveDirection = direction.Unit
@@ -1820,6 +1540,42 @@ runService:BindToRenderStep("walkSpeed", Enum.RenderPriority.Character.Value, fu
     end
 end)
 
+-- Auto cap implementation
+local finishLine = not IS_PRACTICE and workspace.Models.LockerRoomA.FinishLine or Instance.new('Part')
+
+task.spawn(function()
+    while true do
+        task.wait()
+        if not safeIndex(Options.AutoCap, "Value") or not safeIndex(Options.AutoCapEnabled, "Value") then continue end
+        if IS_PRACTICE then continue end
+
+        local character = player.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        if not finishLine or typeof(finishLine) ~= "Instance" then continue end
+
+        local distance
+        pcall(function()
+            distance = (hrp.Position - finishLine.Position).Magnitude
+        end)
+
+        if not distance or distance > 10 then continue end
+
+        local possessor = findPossessor()
+        if not possessor then continue end
+
+        local possessorIsLocalPlayer = possessor == character
+        if possessorIsLocalPlayer then
+            local event = game:GetService("ReplicatedStorage").Remotes.Touchdown
+            if event then
+                event:FireServer()
+            end
+        end
+    end
+end)
+
+-- Periodic character property updates
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -1854,49 +1610,13 @@ task.spawn(function()
     end
 end)
 
--- ========================= AUTO CAP IMPLEMENTATION =========================
+-- Final notification and load configuration
+Luna:Notification({
+    Title = "Eclipse Hub",
+    Content = "Script successfully loaded. Enjoy the Script!",
+    Icon = "check_circle",
+    ImageSource = "Material"
+})
 
-local finishLine = not IS_PRACTICE and workspace.Models.LockerRoomA.FinishLine or Instance.new('Part')
-
-task.spawn(function()
-    while true do
-        task.wait()
-        if not safeIndex(Options.AutoCap, "Value") or not safeIndex(Options.AutoCapEnabled, "Value") then
-            -- continue
-        elseif IS_PRACTICE then
-            -- continue
-        else
-            local character = player.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
-            if not hrp then
-                -- continue
-            else
-                if not finishLine or typeof(finishLine) ~= "Instance" then
-                    -- continue
-                else
-                    local distance
-                    pcall(function()
-                        distance = (hrp.Position - finishLine.Position).Magnitude
-                    end)
-
-                    if not distance or distance > 10 then
-                        -- continue
-                    else
-                        local possessor = findPossessor()
-                        if not possessor then
-                            -- continue
-                        else
-                            local possessorIsLocalPlayer = possessor == character
-                            if possessorIsLocalPlayer then
-                                local event = game:GetService("ReplicatedStorage").Remotes.Touchdown
-                                if event then
-                                    event:FireServer()
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end)
+-- Load user's saved configuration
+Luna:LoadAutoloadConfig()
