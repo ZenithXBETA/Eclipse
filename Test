@@ -153,171 +153,6 @@ if not Luna then
     return
 end
 
--- Add comprehensive compatibility wrapper for Luna UI
-local function ensureCompatibility()
-    -- Ensure Luna has all the necessary methods
-    if not Luna.CreateWindow then
-        Luna.CreateWindow = function(...)
-            return Luna:CreateUI(...) or {}
-        end
-    end
-
-    -- Handle direct and instance method versions
-    if type(Luna.CreateWindow) ~= "function" and type(Luna.CreateUI) == "function" then
-        Luna.CreateWindow = function(self, ...)
-            if self == Luna then
-                return Luna:CreateUI(...)
-            else
-                return Luna:CreateUI(self, ...)
-            end
-        end
-    end
-
-    -- Handle tab refresh methods
-    if Luna.RefreshTheme and not Luna.RefreshUI then
-        Luna.RefreshUI = Luna.RefreshTheme
-    elseif Luna.RefreshUI and not Luna.RefreshTheme then
-        Luna.RefreshTheme = Luna.RefreshUI
-    end
-
-    -- Ensure Luna has CreateTab method
-    if not Luna.CreateTab then
-        Luna.CreateTab = function(...)
-            return Luna.Window and Luna.Window:AddTab(...) or {}
-        end
-    end
-
-    -- Add section, toggle, button, slider, dropdown, and keybind compatibility
-    if not Luna.CreateSection then
-        Luna.CreateSection = function(self, name)
-            if type(self) == "string" then
-                return Luna:AddSection(self)
-            else
-                return self:AddSection(name)
-            end
-        end
-    end
-
-    if not Luna.CreateToggle then
-        Luna.CreateToggle = function(self, options)
-            if type(self) ~= "table" then return {} end
-            if self.AddToggle then
-                return self:AddToggle(options)
-            elseif Luna.AddToggle then
-                return Luna:AddToggle(self, options)
-            else
-                return {}
-            end
-        end
-    end
-
-    if not Luna.CreateSlider then
-        Luna.CreateSlider = function(self, options)
-            if type(self) ~= "table" then return {} end
-            if self.AddSlider then
-                return self:AddSlider(options)
-            elseif Luna.AddSlider then
-                return Luna:AddSlider(self, options)
-            else
-                return {}
-            end
-        end
-    end
-
-    if not Luna.CreateDropdown then
-        Luna.CreateDropdown = function(self, options)
-            if type(self) ~= "table" then return {} end
-            if self.AddDropdown then
-                return self:AddDropdown(options)
-            elseif Luna.AddDropdown then
-                return Luna:AddDropdown(self, options)
-            else
-                return {}
-            end
-        end
-    end
-
-    if not Luna.CreateButton then
-        Luna.CreateButton = function(self, options)
-            if type(self) ~= "table" then return {} end
-            if self.AddButton then
-                return self:AddButton(options)
-            elseif Luna.AddButton then
-                return Luna:AddButton(self, options)
-            else
-                return {}
-            end
-        end
-    end
-
-    if not Luna.CreateKeybind then
-        Luna.CreateKeybind = function(self, options)
-            if type(self) ~= "table" then return {} end
-            if self.AddKeybind then
-                return self:AddKeybind(options)
-            elseif Luna.AddKeybind then
-                return Luna:AddKeybind(self, options)
-            else
-                return {}
-            end
-        end
-    end
-
-    if not Luna.CreateParagraph then
-        Luna.CreateParagraph = function(self, options)
-            if type(self) ~= "table" then return {} end
-            if self.AddParagraph then
-                return self:AddParagraph(options)
-            elseif Luna.AddParagraph then
-                return Luna:AddParagraph(self, options)
-            else
-                return {}
-            end
-        end
-    end
-
-    -- Make all methods accessible to both Luna and its instances
-    for name, func in pairs(Luna) do
-        if type(func) == "function" and name:match("^Create") then
-            -- Add method to Luna object itself if it doesn't exist
-            if not Luna[name] then
-                Luna[name] = func
-            end
-
-            -- Also make it available as an instance method
-            Luna["Add" .. name:sub(7)] = Luna["Add" .. name:sub(7)] or func
-        end
-    end
-end
-
-ensureCompatibility()
-
--- Add a tab refresh method if needed
-local originalCreateTab = Luna.CreateTab or function() end
-if not Luna.tabRefreshAdded then
-    Luna.tabRefreshAdded = true
-    Luna.CreateTab = function(self, ...)
-        local tab = originalCreateTab(self, ...)
-        if tab and not tab.RefreshTab then
-            tab.RefreshTab = function()
-                if Luna.RefreshUI then Luna:RefreshUI() end
-                if Luna.RefreshTheme then Luna:RefreshTheme() end
-
-                -- Try to refresh child elements if possible
-                if tab.RefreshElements then
-                    tab:RefreshElements()
-                end
-
-                -- Ensure tab is visible
-                if tab.Instance and tab.Instance.Visible ~= nil then
-                    tab.Instance.Visible = true
-                end
-            end
-        end
-        return tab
-    end
-end
-
 -- Helper function for safe table index access
 local function safeIndex(t, index)
     if type(t) ~= "table" and type(t) ~= "userdata" then
@@ -343,7 +178,7 @@ Luna:Notification({
     ImageSource = "Material"
 })
 
--- Create window
+-- Create window properly according to Luna documentation
 local Window = Luna:CreateWindow({
     Name = "Eclipse Hub - Football Fusion 2",
     Subtitle = "by Veylo",
@@ -373,23 +208,23 @@ local Window = Luna:CreateWindow({
     }
 })
 
--- Create tabs
+-- Create tabs with correct icons using Material icon set
 local Tabs = {
     Catching = Window:CreateTab({
         Name = "Catching",
-        Icon = "radio_button_checked", -- Updated icon
+        Icon = "radio_button_checked",
         ImageSource = "Material",
         ShowTitle = true
     }),
     Physics = Window:CreateTab({
         Name = "Physics",
-        Icon = "rocket_launch", -- Updated icon
+        Icon = "rocket_launch",
         ImageSource = "Material",
         ShowTitle = true
     }),
     Auto = Window:CreateTab({
         Name = "Auto",
-        Icon = "smart_toy", -- Updated icon
+        Icon = "smart_toy",
         ImageSource = "Material",
         ShowTitle = true
     }),
@@ -401,7 +236,7 @@ local Tabs = {
     }),
     Player = Window:CreateTab({
         Name = "Player",
-        Icon = "person",  -- Updated icon
+        Icon = "person",
         ImageSource = "Material",
         ShowTitle = true
     }),
@@ -416,11 +251,207 @@ local Tabs = {
 -- Store all options in a table for easy access
 local Options = {}
 
--- Fix for Luna UI Library to ensure proper element callbacks
-local function createCallback(element, flag)
-    return function(value)
-        if not element then return end
-        element.Value = value
+-- Utility variables for implementation
+local fakeBalls = {}
+local pullVectoredBalls = {}
+local velocity = {}
+local isCatching = false
+
+-- Create the visualization part
+local part = Instance.new("Part")
+part.Transparency = 0.5
+part.Anchored = true
+part.CanCollide = false
+part.CastShadow = false
+part.Color = Color3.fromRGB(85, 170, 255)
+part.Shape = Enum.PartType.Ball
+part.Material = Enum.Material.ForceField
+part.Parent = workspace
+
+-- Define firetouchinterest with proper fallback
+firetouchinterest = firetouchinterest or function() end
+
+-- Clear tables periodically to prevent memory leaks
+task.spawn(function()
+    while true do
+        task.wait(30) -- Clear every 30 seconds
+        for ball, _ in pairs(pullVectoredBalls) do
+            if not ball or not ball.Parent then
+                pullVectoredBalls[ball] = nil
+            end
+        end
+
+        for ball, _ in pairs(fakeBalls) do
+            if not ball or not ball.Parent then
+                if fakeBalls[ball] and fakeBalls[ball].Parent then
+                    fakeBalls[ball]:Destroy()
+                end
+                fakeBalls[ball] = nil
+            end
+        end
+
+        for ball, _ in pairs(velocity) do
+            if not ball or not ball.Parent then
+                velocity[ball] = nil
+            end
+        end
+    end
+end)
+
+-- Utility Functions
+local function getPing()
+    return statsService.PerformanceStats.Ping:GetValue()
+end
+
+local function getServerPing()
+    return statsService.Network.ServerStatsItem['Data Ping']:GetValue()
+end
+
+local function findClosestBall()
+    local lowestDistance = math.huge
+    local nearestBall = nil
+
+    local character = player.Character
+    if not character then return nil end
+
+    for index, ball in pairs(workspace:GetChildren()) do
+        if ball.Name ~= "Football" then continue end
+        if not ball:IsA("BasePart") then continue end
+        if not character:FindFirstChild("HumanoidRootPart") then continue end
+        local distance = (ball.Position - character.HumanoidRootPart.Position).Magnitude
+
+        if distance < lowestDistance then
+            nearestBall = ball
+            lowestDistance = distance
+        end
+    end
+
+    return nearestBall
+end
+
+local function findPossessor()
+    if not players then return nil end
+
+    for _, plr in pairs(players:GetPlayers()) do
+        if not plr or not plr.Character then continue end
+        local character = plr.Character
+        if not character:FindFirstChildWhichIsA("Tool") then continue end
+        return character
+    end
+    return nil
+end
+
+local function getNearestPartToPartFromParts(part, parts)
+    local lowestDistance = math.huge
+    local nearestPart = nil
+
+    for index, p in pairs(parts) do
+        local distance = (part.Position - p.Position).Magnitude
+
+        if distance < lowestDistance then
+            nearestPart = p
+            lowestDistance = distance
+        end
+    end
+
+    return nearestPart
+end
+
+function beamProjectile(g, v0, x0, t1)
+    local c = 0.5*0.5*0.5;
+    local p3 = 0.5*g*t1*t1 + v0*t1 + x0;
+    local p2 = p3 - (g*t1*t1 + v0*t1)/3;
+    local p1 = (c*g*t1*t1 + 0.5*v0*t1 + x0 - c*(x0+p3))/(3*c) - p2;
+
+    local curve0 = (p1 - x0).magnitude;
+    local curve1 = (p2 - p3).magnitude;
+
+    local b = (x0 - p3).unit;
+    local r1 = (p1 - x0).unit;
+    local u1 = r1:Cross(b).unit;
+    local r2 = (p2 - p3).unit;
+    local u2 = r2:Cross(b).unit;
+    b = u1:Cross(r1).unit;
+
+    local cf1 = CFrame.new(
+        x0.x, x0.y, x0.z,
+        r1.x, u1.x, b.x,
+        r1.y, u1.y, b.y,
+        r1.z, u1.z, b.z
+    )
+
+    local cf2 = CFrame.new(
+        p3.x, p3.y, p3.z,
+        r2.x, u2.x, b.x,
+        r2.y, u2.y, b.y,
+        r2.z, u2.z, b.z
+    )
+
+    return curve0, -curve1, cf1, cf2;
+end
+
+-- Track ping and FPS
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        ping = (getPing() + getServerPing()) / 1000
+    end
+end)
+
+task.spawn(function()
+    runService.RenderStepped:Connect(function()
+        fps += 1
+        task.delay(1, function()
+            fps -= 1
+        end)
+    end)
+end)
+
+-- Customize firetouchinterest for Solara
+if IS_SOLARA then
+    local originalFiretouchinterest = firetouchinterest
+    firetouchinterest = function(part2, part1, state)
+        if AC_BYPASS then
+            part1.CFrame = part2.CFrame
+        else
+            state = state == 1
+            local fakeBall = fakeBalls[part1]
+            if not fakeBall then return end
+
+            local direction = (part2.Position - fakeBall.Position).Unit
+            local distance = (part2.Position - fakeBall.Position).Magnitude
+
+            for i = 1,5,1 do
+                local percentage = i/5 + Random.new():NextNumber(0.01, 0.02)
+                part1.CFrame = fakeBall.CFrame + (direction * distance * percentage)
+            end
+        end
+    end
+end
+
+local function onCharacterCatching(character)
+    if not character then return end
+
+    local arm
+    local success = pcall(function()
+        arm = character:WaitForChild('Left Arm', 5)
+    end)
+
+    if not success or not arm then return end
+
+    arm.ChildAdded:Connect(function(child)
+        if not child:IsA("Weld") then return end
+        isCatching = true
+        task.wait(1.7)
+        isCatching = false
+    end)
+end
+
+local boundaries = {}
+
+if not IS_PRACTICE then
+    for index, part in pairs(workspace.Models.Boundaries:GetChildren()) do
+        boundaries[#boundaries + 1] = part
     end
 end
 
@@ -680,444 +711,7 @@ if AC_BYPASS then
     })
 end
 
--- Player Tab Elements
-local PlayerSection = Tabs.Player:CreateSection("Movement")
-
-Options.Speed = Tabs.Player:CreateToggle({
-    Name = "Speed",
-    Flag = "Speed",
-    Default = false,
-    Description = "Increases your movement speed",
-    Callback = function(Value)
-        local character = player.Character
-        local humanoid = character and character:FindFirstChild("Humanoid")
-        if humanoid and Value then
-            humanoid.WalkSpeed = Options.SpeedValue and Options.SpeedValue.Value or 22
-        end
-    end
-})
-
-Options.SpeedValue = Tabs.Player:CreateSlider({
-    Name = "Speed",
-    Flag = "SpeedValue",
-    Description = "Speed multiplier",
-    Minimum = 20,
-    Maximum = 23,
-    Increment = 1,
-    Default = 22,
-    Callback = function(Value)
-        if Options.Speed.Value then
-            local character = player.Character
-            local humanoid = character and character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.WalkSpeed = Value
-            end
-        end
-    end
-})
-
-Options.JumpPower = Tabs.Player:CreateToggle({
-    Name = "Jump Power",
-    Flag = "JumpPower",
-    Default = false,
-    Description = "Increases your jump height",
-    Callback = function(Value) end
-})
-
-Options.JumpPowerValue = Tabs.Player:CreateSlider({
-    Name = "Power",
-    Flag = "JumpPowerValue",
-    Description = "Jump power multiplier",
-    Minimum = 50,
-    Maximum = 70,
-    Increment = 1,
-    Default = 60,
-    Callback = function(Value)
-        if Options.JumpPower.Value then
-            local character = player.Character
-            local humanoid = character and character:FindFirstChild("Humanoid")
-            if humanoid then
-                if AC_BYPASS then
-                    humanoid.JumpPower = Value
-                end
-            end
-        end
-    end
-})
-
-local AngleSection = Tabs.Player:CreateSection("Angle Assist")
-
-Options.AngleAssist = Tabs.Player:CreateToggle({
-    Name = "Angle Assist",
-    Flag = "AngleAssist",
-    Default = false,
-    Description = "Boosts your angles",
-    Callback = function(Value) end
-})
-
-Options.AngleAssistJP = Tabs.Player:CreateSlider({
-    Name = "JP",
-    Flag = "AngleAssistJP",
-    Description = "Jump power for angle assist",
-    Minimum = 50,
-    Maximum = 70,
-    Increment = 1,
-    Default = 60,
-    Callback = function(Value)
-        if Options.AngleAssist.Value then
-            local character = player.Character
-            local humanoid = character and character:FindFirstChild("Humanoid")
-            if humanoid and AC_BYPASS then
-                humanoid.JumpPower = Value
-            end
-        end
-    end
-})
-
--- Auto Tab Elements
-local AutoSection = Tabs.Auto:CreateSection("Auto Features")
-
-Options.AutoCap = Tabs.Auto:CreateToggle({
-    Name = "Auto Cap",
-    Flag = "AutoCap",
-    Default = false,
-    Description = "Makes you auto win the race for captain"
-})
-
-Options.AutoCapEnabled = Tabs.Auto:CreateToggle({
-    Name = "Enabled",
-    Flag = "AutoCapEnabled",
-    Default = false,
-    Description = "Enable/disable auto cap feature"
-})
-
--- Throwing Tab Elements
-local ThrowingSection = Tabs.Throwing:CreateSection("QB Options")
-
-Options.QBAimbot = Tabs.Throwing:CreateToggle({
-    Name = "QB Aimbot",
-    Flag = "QBAimbot",
-    Default = false,
-    Description = "Makes your throws more accurate"
-})
-
-Tabs.Throwing:CreateParagraph({
-    Title = "Coming Soon",
-    Content = "QB Aimbot feature is currently in development."
-})
-
--- Catching Tab Elements
-local CatchingSection = Tabs.Catching:CreateSection("Catch Assist")
-
-Options.Magnets = Tabs.Catching:CreateToggle({
-    Name = "Magnets",
-    Flag = "Magnets",
-    Default = false,
-    Description = "Helps you catch the ball"
-})
-
-Options.MagnetsType = Tabs.Catching:CreateDropdown({
-    Name = "Type",
-    Flag = "MagnetsType",
-    Description = "How obvious the magnets behavior is",
-    Items = {"Blatant", "Legit", "League"},
-    Default = "League"
-})
-
-Options.MagnetsCustomRadius = Tabs.Catching:CreateSlider({
-    Name = "Radius",
-    Flag = "MagnetsCustomRadius",
-    Description = "Radius for the Magnets",
-    Minimum = 0,
-    Maximum = 70,
-    Increment = 1,
-    Default = 35
-})
-
-Options.ShowMagHitbox = Tabs.Catching:CreateToggle({
-    Name = "Visualise Hitbox",
-    Flag = "ShowMagHitbox",
-    Default = false,
-    Description = "Displays the mag hitbox",
-    Callback = function(Value) end
-})
-
-local PullSection = Tabs.Catching:CreateSection("Pull Vector")
-
-Options.PullVector = Tabs.Catching:CreateToggle({
-    Name = "Pull Vector",
-    Flag = "PullVector",
-    Default = false,
-    Description = "Pulls you towards the ball",
-    Callback = function(Value) end
-})
-
-Options.PullVectorDistance = Tabs.Catching:CreateSlider({
-    Name = "Distance",
-    Flag = "PullVectorDistance",
-    Description = "Maximum distance to activate pull",
-    Minimum = 0,
-    Maximum = 100,
-    Increment = 1,
-    Default = 50,
-    Callback = function(Value) end
-})
-
-Options.PullVectorType = Tabs.Catching:CreateDropdown({
-    Name = "Type",
-    Flag = "PullVectorType",
-    Description = "Type of pull effect",
-    Items = {"Glide", "Teleport"},
-    Default = "Glide",
-    Multi = false,
-    Callback = function(Value) end
-})
-
-Options.PullVectorPower = Tabs.Catching:CreateSlider({
-    Name = "Power",
-    Flag = "PullVectorPower",
-    Description = "Strength of the pull effect",
-    Minimum = 1,
-    Maximum = 5,
-    Increment = 1,
-    Default = 3,
-    Callback = function(Value) end
-})
-
--- Settings Tab
-local SettingsSection = Tabs.Settings:CreateSection("Configuration")
-
--- Add save/load configuration buttons
-Tabs.Settings:CreateButton({
-    Name = "Save Configuration",
-    Description = "Save current settings to a config file",
-    Callback = function()
-        Luna:Notification({
-            Title = "Config System",
-            Content = "Configuration saved successfully!",
-            Icon = "save",
-            ImageSource = "Material"
-        })
-    end
-})
-
-Tabs.Settings:CreateButton({
-    Name = "Load Configuration",
-    Description = "Load settings from a config file",
-    Callback = function()
-        Luna:Notification({
-            Title = "Config System",
-            Content = "Configuration loaded successfully!",
-            Icon = "file_download",
-            ImageSource = "Material"
-        })
-    end
-})
-
--- Prepare utility variables for implementation
-local fakeBalls = {}
-local pullVectoredBalls = {}
-local velocity = {}
-local isCatching = false
-
--- Clear tables periodically to prevent memory leaks
-task.spawn(function()
-    while true do
-        task.wait(30) -- Clear every 30 seconds
-        for ball, _ in pairs(pullVectoredBalls) do
-            if not ball or not ball.Parent then
-                pullVectoredBalls[ball] = nil
-            end
-        end
-
-        for ball, _ in pairs(fakeBalls) do
-            if not ball or not ball.Parent then
-                if fakeBalls[ball] and fakeBalls[ball].Parent then
-                    fakeBalls[ball]:Destroy()
-                end
-                fakeBalls[ball] = nil
-            end
-        end
-
-        for ball, _ in pairs(velocity) do
-            if not ball or not ball.Parent then
-                velocity[ball] = nil
-            end
-        end
-    end
-end)
-
--- Define firetouchinterest with proper fallback
-firetouchinterest = firetouchinterest or function() end -- Ensure it exists as a fallback
-
--- Create the visualization part
-local part = Instance.new("Part")
-part.Transparency = 0.5
-part.Anchored = true
-part.CanCollide = false
-part.CastShadow = false
-part.Color = Color3.fromRGB(85, 170, 255)
-part.Shape = Enum.PartType.Ball
-part.Material = Enum.Material.ForceField
-part.Parent = workspace
-
--- Utility Functions
-local function getPing()
-    return statsService.PerformanceStats.Ping:GetValue()
-end
-
-local function getServerPing()
-    return statsService.Network.ServerStatsItem['Data Ping']:GetValue()
-end
-
-local function findClosestBall()
-    local lowestDistance = math.huge
-    local nearestBall = nil
-
-    local character = player.Character
-    if not character then return nil end
-
-    for index, ball in pairs(workspace:GetChildren()) do
-        if ball.Name ~= "Football" then continue end
-        if not ball:IsA("BasePart") then continue end
-        if not character:FindFirstChild("HumanoidRootPart") then continue end
-        local distance = (ball.Position - character.HumanoidRootPart.Position).Magnitude
-
-        if distance < lowestDistance then
-            nearestBall = ball
-            lowestDistance = distance
-        end
-    end
-
-    return nearestBall
-end
-
-local function findPossessor()
-    if not players then return nil end
-
-    for _, plr in pairs(players:GetPlayers()) do
-        if not plr or not plr.Character then continue end
-        local character = plr.Character
-        if not character:FindFirstChildWhichIsA("Tool") then continue end
-        return character
-    end
-    return nil
-end
-
-local function getNearestPartToPartFromParts(part, parts)
-    local lowestDistance = math.huge
-    local nearestPart = nil
-
-    for index, p in pairs(parts) do
-        local distance = (part.Position - p.Position).Magnitude
-
-        if distance < lowestDistance then
-            nearestPart = p
-            lowestDistance = distance
-        end
-    end
-
-    return nearestPart
-end
-
-function beamProjectile(g, v0, x0, t1)
-    local c = 0.5*0.5*0.5;
-    local p3 = 0.5*g*t1*t1 + v0*t1 + x0;
-    local p2 = p3 - (g*t1*t1 + v0*t1)/3;
-    local p1 = (c*g*t1*t1 + 0.5*v0*t1 + x0 - c*(x0+p3))/(3*c) - p2;
-
-    local curve0 = (p1 - x0).magnitude;
-    local curve1 = (p2 - p3).magnitude;
-
-    local b = (x0 - p3).unit;
-    local r1 = (p1 - x0).unit;
-    local u1 = r1:Cross(b).unit;
-    local r2 = (p2 - p3).unit;
-    local u2 = r2:Cross(b).unit;
-    b = u1:Cross(r1).unit;
-
-    local cf1 = CFrame.new(
-        x0.x, x0.y, x0.z,
-        r1.x, u1.x, b.x,
-        r1.y, u1.y, b.y,
-        r1.z, u1.z, b.z
-    )
-
-    local cf2 = CFrame.new(
-        p3.x, p3.y, p3.z,
-        r2.x, u2.x, b.x,
-        r2.y, u2.y, b.y,
-        r2.z, u2.z, b.z
-    )
-
-    return curve0, -curve1, cf1, cf2;
-end
-
--- Track ping and FPS
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        ping = (getPing() + getServerPing()) / 1000
-    end
-end)
-
-task.spawn(function()
-    runService.RenderStepped:Connect(function()
-        fps += 1
-        task.delay(1, function()
-            fps -= 1
-        end)
-    end)
-end)
-
--- Customize firetouchinterest for Solara
-if IS_SOLARA then
-    local originalFiretouchinterest = firetouchinterest
-    firetouchinterest = function(part2, part1, state)
-        if AC_BYPASS then
-            part1.CFrame = part2.CFrame
-        else
-            state = state == 1
-            local fakeBall = fakeBalls[part1]
-            if not fakeBall then return end
-
-            local direction = (part2.Position - fakeBall.Position).Unit
-            local distance = (part2.Position - fakeBall.Position).Magnitude
-
-            for i = 1,5,1 do
-                local percentage = i/5 + Random.new():NextNumber(0.01, 0.02)
-                part1.CFrame = fakeBall.CFrame + (direction * distance * percentage)
-            end
-        end
-    end
-end
-
-local function onCharacterCatching(character)
-    if not character then return end
-
-    local arm
-    local success = pcall(function()
-        arm = character:WaitForChild('Left Arm', 5)
-    end)
-
-    if not success or not arm then return end
-
-    arm.ChildAdded:Connect(function(child)
-        if not child:IsA("Weld") then return end
-        isCatching = true
-        task.wait(1.7)
-        isCatching = false
-    end)
-end
-
-local boundaries = {}
-
-if not IS_PRACTICE then
-    for index, part in pairs(workspace.Models.Boundaries:GetChildren()) do
-        boundaries[#boundaries + 1] = part
-    end
-end
-
+-- Handle ball adding to workspace
 workspace.ChildAdded:Connect(function(ball)
     if ball.Name ~= "Football" then return end
     if not ball:IsA("BasePart") then return end
@@ -1266,6 +860,233 @@ workspace.ChildAdded:Connect(function(ball)
         end)
     end
 end)
+
+-- Player Tab Elements
+local PlayerSection = Tabs.Player:CreateSection("Movement")
+
+Options.Speed = Tabs.Player:CreateToggle({
+    Name = "Speed",
+    Flag = "Speed",
+    Default = false,
+    Description = "Increases your movement speed",
+    Callback = function(Value)
+        local character = player.Character
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        if humanoid and Value then
+            humanoid.WalkSpeed = Options.SpeedValue and Options.SpeedValue.Value or 22
+        end
+    end
+})
+
+Options.SpeedValue = Tabs.Player:CreateSlider({
+    Name = "Speed",
+    Flag = "SpeedValue",
+    Description = "Speed multiplier",
+    Minimum = 20,
+    Maximum = 23,
+    Increment = 1,
+    Default = 22,
+    Callback = function(Value)
+        if Options.Speed.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = Value
+            end
+        end
+    end
+})
+
+Options.JumpPower = Tabs.Player:CreateToggle({
+    Name = "Jump Power",
+    Flag = "JumpPower",
+    Default = false,
+    Description = "Increases your jump height"
+})
+
+Options.JumpPowerValue = Tabs.Player:CreateSlider({
+    Name = "Power",
+    Flag = "JumpPowerValue",
+    Description = "Jump power multiplier",
+    Minimum = 50,
+    Maximum = 70,
+    Increment = 1,
+    Default = 60,
+    Callback = function(Value)
+        if Options.JumpPower.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid then
+                if AC_BYPASS then
+                    humanoid.JumpPower = Value
+                end
+            end
+        end
+    end
+})
+
+local AngleSection = Tabs.Player:CreateSection("Angle Assist")
+
+Options.AngleAssist = Tabs.Player:CreateToggle({
+    Name = "Angle Assist",
+    Flag = "AngleAssist",
+    Default = false,
+    Description = "Boosts your angles"
+})
+
+Options.AngleAssistJP = Tabs.Player:CreateSlider({
+    Name = "JP",
+    Flag = "AngleAssistJP",
+    Description = "Jump power for angle assist",
+    Minimum = 50,
+    Maximum = 70,
+    Increment = 1,
+    Default = 60,
+    Callback = function(Value)
+        if Options.AngleAssist.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and AC_BYPASS then
+                humanoid.JumpPower = Value
+            end
+        end
+    end
+})
+
+-- Auto Tab Elements
+local AutoSection = Tabs.Auto:CreateSection("Auto Features")
+
+Options.AutoCap = Tabs.Auto:CreateToggle({
+    Name = "Auto Cap",
+    Flag = "AutoCap",
+    Default = false,
+    Description = "Makes you auto win the race for captain"
+})
+
+Options.AutoCapEnabled = Tabs.Auto:CreateToggle({
+    Name = "Enabled",
+    Flag = "AutoCapEnabled",
+    Default = false,
+    Description = "Enable/disable auto cap feature"
+})
+
+-- Throwing Tab Elements
+local ThrowingSection = Tabs.Throwing:CreateSection("QB Options")
+
+Options.QBAimbot = Tabs.Throwing:CreateToggle({
+    Name = "QB Aimbot",
+    Flag = "QBAimbot",
+    Default = false,
+    Description = "Makes your throws more accurate"
+})
+
+Tabs.Throwing:CreateParagraph({
+    Title = "Coming Soon",
+    Content = "QB Aimbot feature is currently in development."
+})
+
+-- Catching Tab Elements
+local CatchingSection = Tabs.Catching:CreateSection("Catch Assist")
+
+Options.Magnets = Tabs.Catching:CreateToggle({
+    Name = "Magnets",
+    Flag = "Magnets",
+    Default = false,
+    Description = "Helps you catch the ball"
+})
+
+Options.MagnetsType = Tabs.Catching:CreateDropdown({
+    Name = "Type",
+    Flag = "MagnetsType",
+    Description = "How obvious the magnets behavior is",
+    Items = {"Blatant", "Legit", "League"},
+    Default = "League"
+})
+
+Options.MagnetsCustomRadius = Tabs.Catching:CreateSlider({
+    Name = "Radius",
+    Flag = "MagnetsCustomRadius",
+    Description = "Radius for the Magnets",
+    Minimum = 0,
+    Maximum = 70,
+    Increment = 1,
+    Default = 35
+})
+
+Options.ShowMagHitbox = Tabs.Catching:CreateToggle({
+    Name = "Visualise Hitbox",
+    Flag = "ShowMagHitbox",
+    Default = false,
+    Description = "Displays the mag hitbox"
+})
+
+local PullSection = Tabs.Catching:CreateSection("Pull Vector")
+
+Options.PullVector = Tabs.Catching:CreateToggle({
+    Name = "Pull Vector",
+    Flag = "PullVector",
+    Default = false,
+    Description = "Pulls you towards the ball"
+})
+
+Options.PullVectorDistance = Tabs.Catching:CreateSlider({
+    Name = "Distance",
+    Flag = "PullVectorDistance",
+    Description = "Maximum distance to activate pull",
+    Minimum = 0,
+    Maximum = 100,
+    Increment = 1,
+    Default = 50
+})
+
+Options.PullVectorType = Tabs.Catching:CreateDropdown({
+    Name = "Type",
+    Flag = "PullVectorType",
+    Description = "Type of pull effect",
+    Items = {"Glide", "Teleport"},
+    Default = "Glide",
+    Multi = false
+})
+
+Options.PullVectorPower = Tabs.Catching:CreateSlider({
+    Name = "Power",
+    Flag = "PullVectorPower",
+    Description = "Strength of the pull effect",
+    Minimum = 1,
+    Maximum = 5,
+    Increment = 1,
+    Default = 3
+})
+
+-- Settings Tab
+local SettingsSection = Tabs.Settings:CreateSection("Configuration")
+
+-- Add save/load configuration buttons
+Tabs.Settings:CreateButton({
+    Name = "Save Configuration",
+    Description = "Save current settings to a config file",
+    Callback = function()
+        Luna:Notification({
+            Title = "Config System",
+            Content = "Configuration saved successfully!",
+            Icon = "save",
+            ImageSource = "Material"
+        })
+    end
+})
+
+Tabs.Settings:CreateButton({
+    Name = "Load Configuration",
+    Description = "Load settings from a config file",
+    Callback = function()
+        Luna:Notification({
+            Title = "Config System",
+            Content = "Configuration loaded successfully!",
+            Icon = "file_download",
+            ImageSource = "Material"
+        })
+    end
+})
 
 -- Tackle extender implementation
 if firetouchinterest and not IS_SOLARA then
@@ -1485,6 +1306,47 @@ end)
 onCharacterPhysics(player.Character)
 player.CharacterAdded:Connect(onCharacterPhysics)
 
+-- QuickTP implementation
+local quickTPCooldown = os.clock()
+
+userInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if not Options.QuickTPBind or not Options.QuickTPBind.Value then return end
+
+    if input.KeyCode ~= Options.QuickTPBind.Value then return end
+
+    local character = player.Character
+    local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChild("Humanoid")
+
+    if not Options.QuickTP or not Options.QuickTP.Value then return end
+    if not character or not humanoidRootPart or not humanoid then return end
+    if (os.clock() - quickTPCooldown) < 0.1 then return end
+
+    local speed = 2 + ((Options.QuickTPSpeed and Options.QuickTPSpeed.Value or 3) / 4)
+
+    humanoidRootPart.CFrame += humanoid.MoveDirection * speed
+    quickTPCooldown = os.clock()
+end)
+
+-- Click tackle aimbot implementation
+mouse.Button1Down:Connect(function()
+    if not Options.ClickTackleAimbot or not Options.ClickTackleAimbot.Value then return end
+
+    local possessor = findPossessor()
+    local character = player.Character
+    local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+    if not character or not humanoidRootPart then return end
+    if not possessor or not possessor:FindFirstChild("HumanoidRootPart") then return end
+
+    local distance = (possessor.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude
+    if not Options.ClickTackleAimbotDistance or distance > Options.ClickTackleAimbotDistance.Value then return end
+
+    humanoidRootPart.CFrame = possessor.HumanoidRootPart.CFrame
+end)
+
 -- Handle character movement and angles
 local function onCharacterMovement(character)
     local humanoid = character:WaitForChild("Humanoid")
@@ -1597,47 +1459,6 @@ if AC_BYPASS then
         end
     end)
 end
-
--- QuickTP implementation
-local quickTPCooldown = os.clock()
-
-userInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-
-    if not Options.QuickTPBind or not Options.QuickTPBind.Value then return end
-
-    if input.KeyCode ~= Options.QuickTPBind.Value then return end
-
-    local character = player.Character
-    local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChild("Humanoid")
-
-    if not Options.QuickTP or not Options.QuickTP.Value then return end
-    if not character or not humanoidRootPart or not humanoid then return end
-    if (os.clock() - quickTPCooldown) < 0.1 then return end
-
-    local speed = 2 + ((Options.QuickTPSpeed and Options.QuickTPSpeed.Value or 3) / 4)
-
-    humanoidRootPart.CFrame += humanoid.MoveDirection * speed
-    quickTPCooldown = os.clock()
-end)
-
--- Click tackle aimbot implementation
-mouse.Button1Down:Connect(function()
-    if not Options.ClickTackleAimbot or not Options.ClickTackleAimbot.Value then return end
-
-    local possessor = findPossessor()
-    local character = player.Character
-    local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
-
-    if not character or not humanoidRootPart then return end
-    if not possessor or not possessor:FindFirstChild("HumanoidRootPart") then return end
-
-    local distance = (possessor.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude
-    if not Options.ClickTackleAimbotDistance or distance > Options.ClickTackleAimbotDistance.Value then return end
-
-    humanoidRootPart.CFrame = possessor.HumanoidRootPart.CFrame
-end)
 
 -- Walk speed implementation
 runService:BindToRenderStep("walkSpeed", Enum.RenderPriority.Character.Value, function()
@@ -1771,43 +1592,7 @@ task.spawn(function()
     end
 end)
 
--- Function to update tabs
-local function UpdateTabs()
-    for tabName, tab in pairs(Tabs) do
-        if tab.RefreshTab then
-            tab:RefreshTab()
-        end
-    end
-end
-
--- Apply tab refreshes to ensure visibility
-task.spawn(function()
-    wait(1)
-    UpdateTabs()
-    Luna:RefreshUI()
-
-    -- Try refreshing again after a delay
-    wait(2)
-    UpdateTabs()
-    Luna:RefreshUI()
-
-    -- One more time for any remaining elements
-    wait(3)
-    UpdateTabs()
-    Luna:RefreshUI()
-
-    Luna:Notification({
-        Title = "UI Refreshed",
-        Content = "All tabs should now be visible",
-        Icon = "refresh",
-        ImageSource = "Material"
-    })
-end)
-
--- Load user's saved configuration
-Luna:LoadAutoloadConfig()
-
--- Initialize all UI elements
+-- Initialize all UI elements with defaults
 for flag, element in pairs(Options) do
     if element.Value == nil and element.Default ~= nil then
         if element.Set then
@@ -1816,146 +1601,13 @@ for flag, element in pairs(Options) do
     end
 end
 
--- Explicitly refresh each tab's elements
-for _, tab in pairs(Tabs) do
-    for _, option in pairs(Options) do
-        if option.Set and option.Default then
-            option:Set(option.Default)
-        end
-    end
-end
-
--- Force elements to appear correctly
-task.spawn(function()
-    for i = 1, 5 do
-        wait(i)
-        Luna:RefreshUI()
-        UpdateTabs()
-
-        -- Update each option state
-        for _, option in pairs(Options) do
-            if option.Set and option.Default then
-                option:Set(option.Default)
-            end
-        end
-    end
-end)
-
--- More aggressive tab refreshing
-task.spawn(function()
-    for i = 1, 10 do
-        wait(i * 0.5)
-        for tabName, tab in pairs(Tabs) do
-            if tab.RefreshTab then
-                tab:RefreshTab()
-                print("Refreshed tab:", tabName)
-            end
-        end
-        Luna:RefreshUI()
-    end
-end)
+-- Load autoload config
+Luna:LoadAutoloadConfig()
 
 -- Final notification
 Luna:Notification({
     Title = "Eclipse Hub",
-    Content = "Script successfully loaded. Enjoy the Script 😉.",
+    Content = "Script successfully loaded. Enjoy the Script!",
     Icon = "check_circle",
     ImageSource = "Material"
 })
-
--- Intensive UI refresh schedule to ensure all elements are visible
-task.spawn(function()
-    -- Immediate refresh
-    Luna:RefreshUI()
-    UpdateTabs()
-
-    -- Schedule multiple refreshes at different intervals
-    for i = 1, 15 do
-        task.delay(i * 0.5, function()
-            Luna:RefreshUI()
-            UpdateTabs()
-
-            -- Apply each tab's value to force UI update
-            for tabName, tab in pairs(Tabs) do
-                if tab.RefreshTab then
-                    tab:RefreshTab()
-                    print("Refreshed tab:", tabName)
-                end
-
-                -- Attempt to make the tab visible
-                pcall(function()
-                    if tab.Instance then
-                        tab.Instance.Visible = true
-                    end
-                end)
-            end
-
-            -- Re-apply all element values
-            for flag, element in pairs(Options) do
-                if element.Set and element.Value then
-                    task.spawn(function()
-                        pcall(function()
-                            element:Set(element.Value)
-                        end)
-                    end)
-                elseif element.Set and element.Default then
-                    task.spawn(function()
-                        pcall(function()
-                            element:Set(element.Default)
-                        end)
-                    end)
-                end
-            end
-        end)
-    end
-end)
-
--- Apply any window-specific refresh methods
-task.spawn(function()
-    wait(1)
-    -- Try to find and invoke window refresh methods
-    if Window.Refresh then Window:Refresh() end
-    if Window.RefreshUI then Window:RefreshUI() end
-    if Window.RefreshTheme then Window:RefreshTheme() end
-    if Window.RefreshElements then Window:RefreshElements() end
-
-    -- Recursively find and refresh containers
-    local function refreshContainer(container)
-        if not container or type(container) ~= "table" then return end
-
-        if container.RefreshElements then
-            container:RefreshElements()
-        end
-
-        if container.Refresh then
-            container:Refresh()
-        end
-
-        if container.Children then
-            for _, child in pairs(container.Children) do
-                refreshContainer(child)
-            end
-        end
-
-        if container.Tabs then
-            for _, tab in pairs(container.Tabs) do
-                refreshContainer(tab)
-            end
-        end
-
-        if container.Elements then
-            for _, element in pairs(container.Elements) do
-                refreshContainer(element)
-            end
-        end
-    end
-
-    -- Start the recursive refresh
-    refreshContainer(Window)
-
-    -- Try any known UI fix method
-    if Luna.FixUI then Luna:FixUI() end
-end)
-
--- Handle Luna UI Library's global state
-_G.Luna_ConfigLoaded = true
