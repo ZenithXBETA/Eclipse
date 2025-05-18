@@ -1,0 +1,2061 @@
+if getgenv().eclipsehub then warn("Eclipse Hub is already executed") return end
+getgenv().eclipsehub = true
+
+-- Global variables
+local angleTick = 0
+
+loadstring([[
+    function LPH_NO_VIRTUALIZE(f) return f end;
+]])();
+
+-- Safely get Players service
+local players = game:GetService("Players")
+local player
+
+local tweenService = game:GetService("TweenService")
+local statsService = game:GetService("Stats")
+local runService = game:GetService("RunService")
+local userInputService = game:GetService("UserInputService")
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local httpService = game:GetService("HttpService")
+local starterGui = game:GetService("StarterGui")
+
+-- Get player reference safely
+local success, result = pcall(function()
+    return players.LocalPlayer
+end)
+if success then
+    player = result
+else
+    -- Fallback if we can't get the player
+    for _, p in pairs(players:GetPlayers()) do
+        player = p
+        break
+    end
+end
+
+local mouse
+pcall(function()
+    mouse = player and player:GetMouse()
+end)
+
+local camera = workspace.CurrentCamera
+local values = nil
+
+pcall(function()
+    values = replicatedStorage:FindFirstChild("Values")
+end)
+
+local IS_PRACTICE = game.PlaceId == 8206123457
+local IS_SOLARA = typeof(getexecutorname) == "function" and string.match(getexecutorname(), "Solara") or false
+local AC_BYPASS = IS_PRACTICE
+
+local moveToUsing = {}
+
+-- Clean up old moveToUsing times
+task.spawn(function()
+    while true do
+        task.wait(5)
+        local currentTime = os.clock()
+        for i = #moveToUsing, 1, -1 do
+            if currentTime - moveToUsing[i] > 2 then
+                table.remove(moveToUsing, i)
+            end
+        end
+    end
+end)
+
+-- Track last moveTo time
+task.spawn(function()
+    local oldMoveTo = player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.MoveTo
+
+    if oldMoveTo then
+        player.Character.Humanoid.MoveTo = function(self, position, ...)
+            table.insert(moveToUsing, os.clock())
+            return oldMoveTo(self, position, ...)
+        end
+    end
+
+    player.CharacterAdded:Connect(function(character)
+        local humanoid = character:WaitForChild("Humanoid")
+        local oldMoveTo = humanoid.MoveTo
+
+        humanoid.MoveTo = function(self, position, ...)
+            table.insert(moveToUsing, os.clock())
+            return oldMoveTo(self, position, ...)
+        end
+    end)
+end)
+
+if not values or IS_PRACTICE then
+    if replicatedStorage:FindFirstChild("Values") then
+        replicatedStorage:FindFirstChild("Values"):Destroy()
+    end
+    values = Instance.new("Folder")
+    local status = Instance.new("StringValue")
+    status.Name = "Status"
+    status.Value = "InPlay"
+    status.Parent = values
+    values.Parent = replicatedStorage
+    values.Name = "Values"
+end
+
+if not LPH_OBFUSCATED then
+    getfenv().LPH_NO_VIRTUALIZE = function(f) return f end
+end
+
+local Handshake = replicatedStorage.Remotes.CharacterSoundEvent
+local Hooks = {}
+local HandshakeInts = {}
+
+LPH_NO_VIRTUALIZE(function()
+    for i, v in getgc() do
+        if typeof(v) == "function" and islclosure(v) then
+            if (#getprotos(v) == 1) and table.find(getconstants(getproto(v, 1)), 4000001) then
+                hookfunction(v, function() end)
+            end
+        end
+    end
+end)()
+
+Hooks.__namecall = hookmetamethod(game, "__namecall", LPH_NO_VIRTUALIZE(function(self, ...)
+    local Method = getnamecallmethod()
+    local Args = {...}
+
+    if not checkcaller() and (self == Handshake) and (Method == "fireServer") and (string.find(Args[1], "AC")) then
+        if (#HandshakeInts == 0) then
+            HandshakeInts = {table.unpack(Args[2], 2, 18)}
+        else
+            for i, v in HandshakeInts do
+                Args[2][i + 1] = v
+            end
+        end
+    end
+
+    return Hooks.__namecall(self, ...)
+end))
+
+task.wait(1)
+
+if not isfolder("eclipsehub") then
+    makefolder("eclipsehub")
+end
+
+local ping = 0
+local fps = 0
+
+local Options = {} -- Initialize Options table for custom UI
+
+-- Custom UI Library from CustomUi.lua
+local utility = {}
+local UIS = game:GetService("UserInputService");
+local RS = game:GetService("RunService");
+local TS = game:GetService("TweenService");
+-- local mouse = game:GetService('Players').LocalPlayer:GetMouse() -- mouse is already defined
+
+local Library = {}
+local mainKeybind = "LeftControl" -- This was from CustomUi, Fluent uses LeftControl as well
+local canDrag = true
+
+function utility:ToRGB(color)
+	return color.R*255,color.G*255,color.B*255
+end
+
+local function CreateDrag(gui)
+	local dragging
+	local dragInput
+	local dragStart
+	local startPos
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		TS:Create(gui, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)}):Play();
+	end
+
+	local lastEnd = 0
+	local lastMoved = 0
+	local con
+	gui.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if not canDrag then return end
+			dragging = true
+			dragStart = input.Position
+			startPos = gui.Position
+		end
+	end)
+
+	UIS.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+
+	gui.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+			lastMoved = os.clock()
+		end
+	end)
+
+	UIS.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			update(input)
+		end
+	end)
+end
+
+local tweenInfo = TweenInfo.new(.2, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+local tweenInfo2 = TweenInfo.new(.5, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+function Library:tween(object, goal, callback)
+	local tween = TS:Create(object, tweenInfo, goal)
+	tween.Completed:Connect(callback or function() end)
+	tween:Play()
+end
+
+function Library:tween2(object, goal, callback)
+	local tween = TS:Create(object, tweenInfo2, goal)
+	tween.Completed:Connect(callback or function() end)
+	tween:Play()
+end
+
+local function gethui()
+    return game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local ScreenGui = Instance.new('ScreenGui', gethui())
+ScreenGui.Name = "EclipseHubCustomUI" -- Renamed to avoid conflicts if original script is run
+ScreenGui.Enabled = true -- Start enabled
+
+function Library:CreateWindow(options)
+	local GUI = {
+		CurrentTab = nil
+	}
+
+	local Main = Instance.new('Frame', ScreenGui)
+	local Title = Instance.new('TextLabel', Main)
+	local Divider = Instance.new('Frame', Main)
+	local TabBar = Instance.new('ScrollingFrame', Main)
+	local TabLayout = Instance.new('UIListLayout', TabBar)
+	local TabBarPad = Instance.new('UIPadding', TabBar)
+	local MainCorner = Instance.new('UICorner', Main)
+	local MainGradient = Instance.new('UIGradient', Main)
+	local Divider2 = Instance.new('Frame', Main)
+
+	ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	Main.Name = "Main"
+	Main.Position = UDim2.new(0.271,0,0.2845,0)
+	Main.Size = UDim2.new(0,710,0,405)
+	Main.BackgroundColor3 = Color3.new(1,1,1)
+	Main.BorderSizePixel = 0
+	Main.BorderColor3 = Color3.new(0,0,0)
+	Main.ZIndex = 100
+	Title.Name = "Title"
+	Title.Position = UDim2.new(0.0254,0,0,0)
+	Title.Size = UDim2.new(0,options.TabWidth and (options.TabWidth + 50) or 200,0,50) -- Adjusted to use TabWidth if available
+	Title.BackgroundColor3 = Color3.new(1,1,1)
+	Title.BackgroundTransparency = 1
+	Title.BorderSizePixel = 0
+	Title.BorderColor3 = Color3.new(0,0,0)
+	Title.Text = options.Title
+	Title.TextColor3 = Color3.new(0.7843,0.7843,0.7843)
+	Title.Font = Enum.Font.Gotham
+	Title.TextSize = 23
+	Title.ZIndex = 101
+	Title.TextXAlignment = Enum.TextXAlignment.Left
+	Divider.Name = "Divider"
+	Divider.Position = UDim2.new(0,0,0.121,0)
+	Divider.Size = UDim2.new(0,710,0,1)
+	Divider.BackgroundColor3 = Color3.new(0,0,0)
+	Divider.BorderSizePixel = 0
+	Divider.BorderColor3 = Color3.new(0,0,0)
+	Divider.ZIndex = 102
+	TabBar.Name = "TabBar"
+	TabBar.Position = UDim2.new(0,0,0.1235,0)
+	TabBar.Size = UDim2.new(0, options.TabWidth or 161 ,0,355) -- Use TabWidth from options
+	TabBar.BackgroundColor3 = Color3.new(1,1,1)
+	TabBar.BackgroundTransparency = 1
+	TabBar.BorderSizePixel = 0
+	TabBar.BorderColor3 = Color3.new(0,0,0)
+	TabBar.ZIndex = 103
+	TabBar.ScrollingEnabled = options.ScrollingEnabled or false
+	TabBar.ScrollBarThickness = 0
+	TabBar.ScrollBarImageColor3 = Color3.new(0,0,0)
+	TabLayout.Name = "TabLayout"
+	TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	TabBarPad.Name = "TabBarPad"
+	TabBarPad.PaddingTop = UDim.new(0,5)
+	Divider2.Name = "Divider2"
+	Divider2.Position = UDim2.new((options.TabWidth or 161)/710,0,0.121,0) -- Adjusted based on TabWidth
+	Divider2.Size = UDim2.new(0,1,0,356)
+	Divider2.BackgroundColor3 = Color3.new(0,0,0)
+	Divider2.BackgroundTransparency = 0.5
+	Divider2.BorderSizePixel = 0
+	Divider2.BorderColor3 = Color3.new(0,0,0)
+	Divider2.ZIndex = 102
+	MainCorner.CornerRadius = UDim.new(0,20)
+	MainGradient.Name = "MainGradient"
+	MainGradient.Color = ColorSequence.new{
+    	ColorSequenceKeypoint.new(0.00, Color3.new(35 / 255, 35 / 255, 48 / 255)),
+    	ColorSequenceKeypoint.new(1.00, Color3.new(66 / 255, 109 / 255, 135 / 255))
+	}
+
+    -- Mobile Toggle Card from CustomUi.lua
+    local MC_ScreenGui = Instance.new('ScreenGui', gethui())
+    MC_ScreenGui.Name = "EclipseHub_MobileCard_SG"
+	local MobileCard = Instance.new('ImageButton', MC_ScreenGui)
+	local CardGradient = Instance.new('UIGradient', MobileCard)
+	local CardText = Instance.new('TextLabel', MobileCard)
+	local CardCorner = Instance.new('UICorner', MobileCard)
+
+	MC_ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	MobileCard.Name = "MobileCard"
+	MobileCard.Position = UDim2.new(0.5, -20, 0, 10);
+	MobileCard.Size = UDim2.new(0,40,0,40)
+	MobileCard.BackgroundColor3 = Color3.new(1,1,1)
+	MobileCard.BorderSizePixel = 0
+	MobileCard.BorderColor3 = Color3.new(0,0,0)
+	MobileCard.AutoButtonColor = false
+	CardGradient.Name = "CardGradient"
+	CardGradient.Color = ColorSequence.new{
+		ColorSequenceKeypoint.new(0.00, Color3.new(66 / 255, 109 / 255, 135 / 255)),
+		ColorSequenceKeypoint.new(1.00, Color3.new(35 / 255, 35 / 255, 48 / 255))
+	}
+	CardGradient.Rotation = -84
+	CardText.Name = "CardText"
+	CardText.Size = UDim2.new(0,40,0,40)
+	CardText.BackgroundColor3 = Color3.new(1,1,1)
+	CardText.BackgroundTransparency = 1
+	CardText.BorderSizePixel = 0
+	CardText.BorderColor3 = Color3.new(0,0,0)
+	CardText.Text = "EH" -- Changed to EH for Eclipse Hub
+	CardText.TextColor3 = Color3.new(0.7843,0.7843,0.7843)
+	CardText.Font = Enum.Font.Gotham
+	CardText.TextSize = 23
+	CardText.ZIndex = 101
+    CardCorner.CornerRadius = UDim.new(0,5)
+
+	MobileCard.MouseButton1Click:Connect(function()
+		ScreenGui.Enabled = not ScreenGui.Enabled
+        MC_ScreenGui.Enabled = not MC_ScreenGui.Enabled -- Toggle its own visibility too
+	end)
+
+	CreateDrag(MobileCard)
+	CreateDrag(Main)
+
+	function Library:Toggle() -- This is for mainKeybind
+		ScreenGui.Enabled = not ScreenGui.Enabled
+        MC_ScreenGui.Enabled = not MC_ScreenGui.Enabled
+	end
+
+	UIS.InputBegan:Connect(function(key, gp)
+		if gp then return end;
+        local minimizeKey = options.MinimizeKey or Enum.KeyCode.LeftControl
+		if key.KeyCode == minimizeKey then
+			Library:Toggle()
+		end
+	end)
+
+	function GUI:NewTab(options)
+		local tab = {
+			Active = false
+		}
+
+		local Canvas = Instance.new('ScrollingFrame', Main)
+		local UIListLayout = Instance.new('UIListLayout', Canvas)
+		local UIPadding = Instance.new('UIPadding', Canvas)
+		local SelectedTab = Instance.new('Frame', TabBar)
+		local Highlight = Instance.new('Frame', SelectedTab)
+		local STCorner = Instance.new('UICorner', SelectedTab)
+		local TabButton = Instance.new('TextButton', SelectedTab) -- Renamed from Tab to TabButton to avoid conflict
+
+		SelectedTab.Name = options.Title .. "TabContainer"
+		SelectedTab.Position = UDim2.new(0.5,0,0,0) -- Centered by UIListLayout
+        SelectedTab.Size = UDim2.new(0, (TabBar.Size.X.Offset - 20) > 0 and (TabBar.Size.X.Offset - 20) or 100, 0, 34) -- Adjust based on TabBar width
+		SelectedTab.BackgroundColor3 = Color3.new(0,0,0)
+		SelectedTab.BackgroundTransparency = 1
+		SelectedTab.BorderSizePixel = 0
+		SelectedTab.BorderColor3 = Color3.new(0,0,0)
+		SelectedTab.ZIndex = 100
+		Highlight.Name = "Highlight"
+		Highlight.Position = UDim2.new(0.0508,0,0.2353,0)
+		Highlight.Size = UDim2.new(0,2,0,18)
+		Highlight.BackgroundColor3 = Color3.new(1,1,1) -- Changed to white for visibility on dark theme
+		Highlight.BorderSizePixel = 0
+		Highlight.Transparency = 1
+		Highlight.BorderColor3 = Color3.new(0,0,0)
+		Highlight.ZIndex = 101
+		STCorner.CornerRadius = UDim.new(0,6)
+		TabButton.Name = options.Title .. "Button"
+		TabButton.Position = UDim2.new(0.0678,0,0,0)
+		TabButton.Size = UDim2.new(1, -10 ,1,0) -- Fill most of SelectedTab
+		TabButton.BackgroundColor3 = Color3.new(1,1,1)
+		TabButton.BackgroundTransparency = 1
+		TabButton.BorderSizePixel = 0
+		TabButton.BorderColor3 = Color3.new(0,0,0)
+		TabButton.Text = options.Title
+		TabButton.TextColor3 = Color3.new(0.6,0.6,0.6) -- Default non-selected text color
+		TabButton.Font = Enum.Font.Gotham
+		TabButton.TextSize = 14
+		TabButton.ZIndex = 105
+		TabButton.AutoButtonColor = false
+		Canvas.Name = options.Title .. "Canvas"
+		Canvas.Position = UDim2.new(Divider2.Position.X.Scale + Divider2.Size.X.Scale ,0,0.1235,0) -- Position next to Divider2
+		Canvas.Size = UDim2.new(1 - (Divider2.Position.X.Scale + Divider2.Size.X.Scale) - 0.01,0,0,355) -- Fill remaining space
+		Canvas.BackgroundColor3 = Color3.new(1,1,1)
+		Canvas.BackgroundTransparency = 1
+		Canvas.BorderSizePixel = 0
+		Canvas.BorderColor3 = Color3.new(0,0,0)
+		Canvas.ZIndex = 107
+		Canvas.Visible = false
+		Canvas.AutomaticCanvasSize = Enum.AutomaticSize.Y;
+		Canvas.ScrollBarThickness = options.ScrollSpeed or 5 -- Use ScrollSpeed if defined
+		Canvas.ScrollBarImageColor3 = Color3.new(0,0,0)
+		UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		UIListLayout.Padding = UDim.new(0,5)
+		UIPadding.PaddingTop = UDim.new(0,10)
+		UIPadding.PaddingLeft = UDim.new(0,10)
+        UIPadding.PaddingRight = UDim.new(0,10)
+
+		function tab:Activate()
+			if not tab.Active then
+				if GUI.CurrentTab ~= nil then
+					GUI.CurrentTab:Deactivate()
+				end
+				tab.Active = true
+				Library:tween(TabButton, {TextColor3 = Color3.new(1,1,1)})
+				Library:tween(SelectedTab, {BackgroundTransparency = 0.5})
+				Library:tween(Highlight, {BackgroundTransparency = 0})
+				Canvas.Visible = true
+				GUI.CurrentTab = tab
+			end
+		end
+
+		function tab:Deactivate()
+			if tab.Active then
+				tab.Active = false
+				Library:tween(TabButton, {TextColor3 = Color3.new(0.6,0.6,0.6)})
+				Library:tween(SelectedTab, {BackgroundTransparency = 1})
+				Library:tween(Highlight, {BackgroundTransparency = 1})
+				Canvas.Visible = false
+			end
+		end
+
+		TabButton.MouseButton1Click:Connect(function()
+			tab:Activate()
+		end)
+
+		if GUI.CurrentTab == nil then
+			tab:Activate()
+		end
+
+		function tab:NewToggle(options)
+			local toggle = {
+				State = options.Default or false
+			}
+
+			local ToggleFrame = Instance.new('ImageButton', Canvas) -- Changed from Toggle to ToggleFrame
+			local ToggleTitle = Instance.new('TextLabel', ToggleFrame)
+			local CheckBox = Instance.new('Frame', ToggleFrame)
+			local CheckBoxCorner = Instance.new('UICorner', CheckBox)
+			local CheckMark = Instance.new('ImageButton', CheckBox)
+			local ToggleCorner = Instance.new('UICorner', ToggleFrame)
+
+			ToggleFrame.Name = options.Name
+			ToggleFrame.Position = UDim2.new(0.5, -((Canvas.AbsoluteSize.X - 40)/2) ,0,0) -- Centered with padding
+            ToggleFrame.Size = UDim2.new(0, Canvas.AbsoluteSize.X - 40, 0, 34) -- Use canvas width with padding
+			ToggleFrame.BackgroundColor3 = Color3.new(0,0,0)
+			ToggleFrame.BackgroundTransparency = 0.5
+			ToggleFrame.BorderSizePixel = 0
+			ToggleFrame.BorderColor3 = Color3.new(0,0,0)
+			ToggleFrame.ZIndex = 108
+			ToggleFrame.AutoButtonColor = false
+			ToggleTitle.Name = "ToggleTitle"
+			ToggleTitle.Position = UDim2.new(0.0321,0,0,0)
+			ToggleTitle.Size = UDim2.new(0.8,0,1,0) -- Adjusted size
+			ToggleTitle.BackgroundColor3 = Color3.new(1,1,1)
+			ToggleTitle.BackgroundTransparency = 1
+			ToggleTitle.BorderSizePixel = 0
+			ToggleTitle.BorderColor3 = Color3.new(0,0,0)
+			ToggleTitle.Text = options.Name
+			ToggleTitle.TextColor3 = Color3.new(0.851,0.851,0.851)
+			ToggleTitle.Font = Enum.Font.Gotham
+			ToggleTitle.TextSize = 14
+			ToggleTitle.ZIndex = 109
+			ToggleTitle.TextXAlignment = Enum.TextXAlignment.Left
+			CheckBox.Name = "CheckBox"
+			CheckBox.Position = UDim2.new(0.9359,0,0.1471,0)
+			CheckBox.Size = UDim2.new(0,24,0,24)
+			CheckBox.BackgroundColor3 = Color3.new(0.0706,0.0706,0.0706)
+			CheckBox.BorderSizePixel = 0
+			CheckBox.BorderColor3 = Color3.new(0,0,0)
+			CheckBox.ZIndex = 107
+			CheckBoxCorner.CornerRadius = UDim.new(0,5)
+			CheckMark.Name = "CheckMark"
+			CheckMark.Position = UDim2.new(0.0464,0,0.0417,0)
+			CheckMark.Size = UDim2.new(0,22,0,22)
+			CheckMark.BackgroundColor3 = Color3.new(0,0,0)
+			CheckMark.BackgroundTransparency = 1
+			CheckMark.BorderSizePixel = 0
+			CheckMark.BorderColor3 = Color3.new(0,0,0)
+			CheckMark.Image = "rbxassetid://6031094667"
+			CheckMark.Visible = true
+			CheckMark.AutoButtonColor = false
+			CheckMark.ZIndex = 107
+			ToggleCorner.CornerRadius = UDim.new(0,6)
+
+            options.callback(toggle.State) -- Call initial callback
+
+			if toggle.State then
+				Library:tween(CheckMark, {ImageTransparency = 0})
+			else
+				Library:tween(CheckMark, {ImageTransparency = 1})
+			end
+
+			function toggle:SetValue(boolean) -- Added for external set
+                toggle.State = boolean
+                if toggle.State then
+					Library:tween(CheckMark, {ImageTransparency = 0})
+				else
+					Library:tween(CheckMark, {ImageTransparency = 1})
+				end
+				options.callback(toggle.State)
+            end
+
+			function toggle:Toggle(boolean)
+				if boolean == nil then
+					toggle.State = not toggle.State
+				else
+					toggle.State = boolean
+				end
+
+				if toggle.State then
+					Library:tween(CheckMark, {ImageTransparency = 0})
+				else
+					Library:tween(CheckMark, {ImageTransparency = 1})
+				end
+				options.callback(toggle.State)
+			end
+
+			ToggleFrame.MouseButton1Down:Connect(function()
+				toggle:Toggle()
+			end)
+			return toggle
+		end
+
+		function tab:NewSlider(options)
+			local slider = {
+				hover = false,
+				MouseDown = false,
+				connections = {}
+			}
+
+			local SliderFrame = Instance.new('ImageButton', Canvas) -- Renamed from Slider
+			local SliderTitle = Instance.new('TextLabel', SliderFrame)
+			local SliderBack = Instance.new('Frame', SliderFrame)
+			local SliderBackCorner = Instance.new('UICorner', SliderBack)
+			local SliderMain = Instance.new('Frame', SliderBack)
+			local SliderMainCorner = Instance.new('UICorner', SliderMain)
+			local SliderCorner = Instance.new('UICorner', SliderFrame)
+			local SliderAmt = Instance.new('TextBox', SliderFrame)
+
+			SliderFrame.Name = options.Name
+			SliderFrame.Position = UDim2.new(0.5, -((Canvas.AbsoluteSize.X - 40)/2) ,0,0) -- Centered
+            SliderFrame.Size = UDim2.new(0, Canvas.AbsoluteSize.X - 40, 0, 34) -- Use canvas width
+			SliderFrame.BackgroundColor3 = Color3.new(0,0,0)
+			SliderFrame.BackgroundTransparency = 0.5
+			SliderFrame.BorderSizePixel = 0
+			SliderFrame.BorderColor3 = Color3.new(0,0,0)
+			SliderFrame.ZIndex = 108
+			SliderFrame.AutoButtonColor = false
+			SliderTitle.Name = "SliderTitle"
+			SliderTitle.Position = UDim2.new(0.0321,0,0,0)
+			SliderTitle.Size = UDim2.new(0.4,0,1,0) -- Adjusted size
+			SliderTitle.BackgroundColor3 = Color3.new(1,1,1)
+			SliderTitle.BackgroundTransparency = 1
+			SliderTitle.BorderSizePixel = 0
+			SliderTitle.BorderColor3 = Color3.new(0,0,0)
+			SliderTitle.Text = options.Name
+			SliderTitle.TextColor3 = Color3.new(0.851,0.851,0.851)
+			SliderTitle.Font = Enum.Font.Gotham
+			SliderTitle.TextSize = 14
+			SliderTitle.ZIndex = 109
+			SliderTitle.TextXAlignment = Enum.TextXAlignment.Left
+			SliderBack.Name = "SliderBack"
+			SliderBack.Position = UDim2.new(0.5251,0,0.4118,0)
+			SliderBack.Size = UDim2.new(0.35,0,0,6) -- Adjusted size
+			SliderBack.BackgroundColor3 = Color3.new(0.0706,0.0706,0.0706)
+			SliderBack.BorderSizePixel = 0
+			SliderBack.BorderColor3 = Color3.new(0,0,0)
+			SliderBack.ZIndex = 109
+			SliderBackCorner.CornerRadius = UDim.new(0,5)
+			SliderMain.Name = "SliderMain"
+			SliderMain.Position = UDim2.new(-0,0,0,0)
+			SliderMain.Size = UDim2.new(0,118,0,6) -- Default size, will be updated
+			SliderMain.BackgroundColor3 = Color3.new(1,1,1)
+			SliderMain.BorderSizePixel = 0
+			SliderMain.BorderColor3 = Color3.new(0,0,0)
+			SliderMain.ZIndex = 109
+			SliderMainCorner.CornerRadius = UDim.new(0,5)
+			SliderCorner.CornerRadius = UDim.new(0,6)
+			SliderAmt.Name = "SliderAmt"
+			SliderAmt.Position = UDim2.new(0.9,0,0,0) -- Positioned to the right
+			SliderAmt.Size = UDim2.new(0.08,0,1,0) -- Adjusted size
+			SliderAmt.BackgroundColor3 = Color3.new(1,1,1)
+			SliderAmt.BackgroundTransparency = 1
+			SliderAmt.BorderSizePixel = 0
+			SliderAmt.BorderColor3 = Color3.new(0,0,0)
+			SliderAmt.Text = tostring(options.Default or options.min)
+			SliderAmt.TextColor3 = Color3.new(0.851,0.851,0.851)
+			SliderAmt.Font = Enum.Font.Gotham
+			SliderAmt.TextSize = 11
+			SliderAmt.ZIndex = 109
+
+			function slider:SetValue(v, fromInput)
+                local valueToSet
+				if v == nil then -- Dragging
+					local percentage = math.clamp((mouse.X - SliderBack.AbsolutePosition.X) / (SliderBack.AbsoluteSize.X), 0, 1)
+					valueToSet = ((options.max - options.min) * percentage) + options.min
+				else -- Direct set or textbox input
+                    valueToSet = tonumber(v) or options.Default
+                end
+
+                valueToSet = math.clamp(valueToSet, options.min, options.max)
+                if options.Rounding and options.Rounding > 0 then
+                     valueToSet = math.floor(valueToSet / (10 ^ -options.Rounding) + 0.5) * (10 ^ -options.Rounding)
+                elseif options.Rounding == 0 then
+                     valueToSet = math.floor(valueToSet + 0.5)
+                end
+
+
+                if options.Rounding == 0 then
+                    SliderAmt.Text = string.format("%.0f", valueToSet)
+                else
+                    SliderAmt.Text = string.format("%." .. (options.Rounding or 2) .. "f", valueToSet)
+                end
+
+				SliderMain.Size = UDim2.fromScale(((valueToSet - options.min) / (options.max - options.min)), 1)
+				if not fromInput then options.callback(slider:GetValue()) end
+			end
+
+			function slider:GetValue()
+				return tonumber(SliderAmt.Text) or options.Default
+			end
+
+			slider:SetValue(options.Default or options.min, true) -- Set initial value without callback
+            options.callback(slider:GetValue()) -- Manually call initial callback
+
+			SliderAmt.FocusLost:Connect(function(enterPressed)
+                if enterPressed then
+                    local toNum = tonumber(SliderAmt.Text)
+                    if toNum then
+                        toNum = math.clamp(toNum, options.min, options.max)
+                        slider:SetValue(toNum, true)
+                        options.callback(slider:GetValue())
+                    else
+                        slider:SetValue(options.Default, true) -- Revert to default if invalid
+                        options.callback(slider:GetValue())
+                    end
+                else -- If focus lost without enter (e.g. click away)
+                     slider:SetValue(slider:GetValue(), true) -- Ensure current text value is clamped and set
+                end
+			end)
+
+			local Connection;
+			table.insert(slider.connections, UIS.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					pcall(function()
+						Connection:Disconnect();
+						Connection = nil;
+					end)
+                    -- Final callback on mouse up
+                    options.callback(slider:GetValue())
+				end
+			end))
+
+			table.insert(slider.connections, SliderFrame.MouseButton1Down:Connect(function()
+				if(Connection) then
+					Connection:Disconnect();
+				end;
+				Connection = RS.Heartbeat:Connect(function()
+					slider:SetValue(nil, false) --Dragging, callback inside SetValue
+				end)
+			end))
+			return slider
+		end
+
+		function tab:NewDropDown(options)
+			local dropdown = { Value = options.Default }
+
+			local DropdownFrame = Instance.new('Frame', Canvas) -- Renamed
+			local DropdownTitle = Instance.new('TextLabel', DropdownFrame)
+			local DropdownSelected = Instance.new('Frame', DropdownFrame)
+			local SelectedOptionCorner = Instance.new('UICorner', DropdownSelected)
+			local SelectedText = Instance.new('TextButton', DropdownSelected)
+			local DropdownCorner = Instance.new('UICorner', DropdownFrame)
+
+			DropdownFrame.Name = options.Name
+			DropdownFrame.Position = UDim2.new(0.5, -((Canvas.AbsoluteSize.X - 40)/2) ,0,0) -- Centered
+            DropdownFrame.Size = UDim2.new(0, Canvas.AbsoluteSize.X - 40, 0, 34) -- Use canvas width
+			DropdownFrame.BackgroundColor3 = Color3.new(0,0,0)
+			DropdownFrame.BackgroundTransparency = 0.5
+			DropdownFrame.BorderSizePixel = 0
+			DropdownFrame.BorderColor3 = Color3.new(0,0,0)
+			DropdownFrame.ZIndex = 108
+			DropdownTitle.Name = "DropdownTitle"
+			DropdownTitle.Position = UDim2.new(0.0321,0,0,0)
+			DropdownTitle.Size = UDim2.new(0.6,0,1,0) -- Adjusted size
+			DropdownTitle.BackgroundColor3 = Color3.new(1,1,1)
+			DropdownTitle.BackgroundTransparency = 1
+			DropdownTitle.BorderSizePixel = 0
+			DropdownTitle.BorderColor3 = Color3.new(0,0,0)
+			DropdownTitle.Text = options.Name
+			DropdownTitle.TextColor3 = Color3.new(0.851,0.851,0.851)
+			DropdownTitle.Font = Enum.Font.Gotham
+			DropdownTitle.TextSize = 14
+			DropdownTitle.ZIndex = 109
+			DropdownTitle.TextXAlignment = Enum.TextXAlignment.Left
+			DropdownSelected.Name = "DropdownSelected"
+			DropdownSelected.Position = UDim2.new(0.65,0,0.1471,0) -- Adjusted position
+			DropdownSelected.Size = UDim2.new(0.33,0,0,24) -- Adjusted size
+			DropdownSelected.BackgroundColor3 = Color3.new(0.0706,0.0706,0.0706)
+			DropdownSelected.BorderSizePixel = 0
+			DropdownSelected.BorderColor3 = Color3.new(0,0,0)
+			DropdownSelected.ZIndex = 109
+			SelectedOptionCorner.CornerRadius = UDim.new(0,5)
+			SelectedText.Name = "SelectedText"
+			SelectedText.Position = UDim2.new(0.0321,0,0,0)
+			SelectedText.Size = UDim2.new(0.9,0,1,0) -- Fill DropdownSelected
+			SelectedText.BackgroundColor3 = Color3.new(1,1,1)
+			SelectedText.BackgroundTransparency = 1
+			SelectedText.BorderSizePixel = 0
+			SelectedText.BorderColor3 = Color3.new(0,0,0)
+			SelectedText.AutoButtonColor = false
+			SelectedText.Text = options.Default
+			SelectedText.TextColor3 = Color3.new(0.851,0.851,0.851)
+			SelectedText.Font = Enum.Font.Gotham
+			SelectedText.TextSize = 13
+			SelectedText.ZIndex = 109
+			DropdownCorner.CornerRadius = UDim.new(0,6)
+
+			local DropDownOptionsFrame = Instance.new('Frame', Main) -- Renamed
+			local DDOListLayout = Instance.new('UIListLayout', DropDownOptionsFrame) -- Renamed
+            local DDOPadding = Instance.new('UIPadding', DropDownOptionsFrame)
+
+			DropDownOptionsFrame.Name = options.Name .. "OptionsContainer"
+			DropDownOptionsFrame.Position = UDim2.new(DropdownFrame.Position.X.Scale + DropdownSelected.Position.X.Scale, DropdownFrame.Position.X.Offset + DropdownSelected.Position.X.Offset, DropdownFrame.Position.Y.Scale, DropdownFrame.Position.Y.Offset + DropdownFrame.Size.Y.Offset + 5)
+            DropDownOptionsFrame.Size = UDim2.new(0, DropdownSelected.AbsoluteSize.X, 0, 0) -- Width of selector, height auto
+			DropDownOptionsFrame.BackgroundColor3 = Color3.fromRGB(30,30,40) -- Darker background
+			DropDownOptionsFrame.BackgroundTransparency = 0.05
+			DropDownOptionsFrame.BorderSizePixel = 1
+			DropDownOptionsFrame.BorderColor3 = Color3.fromRGB(50,50,60)
+			DropDownOptionsFrame.Visible = false
+			DropDownOptionsFrame.AutomaticSize = Enum.AutomaticSize.Y
+			DropDownOptionsFrame.ZIndex = 110
+			DDOListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+			DDOListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            DDOListLayout.Padding = UDim.new(0,2)
+            DDOPadding.PaddingTop = UDim.new(0,2)
+            DDOPadding.PaddingBottom = UDim.new(0,2)
+
+			for i, v_option in ipairs(options.Values) do
+				local OptionButton = Instance.new('TextButton', DropDownOptionsFrame) -- Renamed
+				OptionButton.Name = v_option .. "Option"
+				OptionButton.Size = UDim2.new(1, -4, 0, 25) -- Full width minus padding, fixed height
+				OptionButton.BackgroundColor3 = Color3.fromRGB(40,40,50)
+				OptionButton.BackgroundTransparency = 1 -- Transparent, rely on hover
+				OptionButton.BorderSizePixel = 0
+				OptionButton.Text = v_option
+				OptionButton.BorderColor3 = Color3.new(0,0,0)
+				OptionButton.TextColor3 = Color3.new(0.8627,0.8627,0.8627)
+				OptionButton.Font = Enum.Font.SourceSans
+				OptionButton.TextSize = 14
+				OptionButton.ZIndex = 111
+                OptionButton.AutoButtonColor = false
+
+                OptionButton.MouseEnter:Connect(function() Library:tween(OptionButton, { BackgroundColor3 = Color3.fromRGB(50,50,70), BackgroundTransparency = 0.5}) end)
+                OptionButton.MouseLeave:Connect(function() Library:tween(OptionButton, { BackgroundColor3 = Color3.fromRGB(40,40,50), BackgroundTransparency = 1}) end)
+
+				OptionButton.MouseButton1Click:Connect(function()
+					SelectedText.Text = v_option
+                    dropdown.Value = v_option
+					DropDownOptionsFrame.Visible = false
+					options.callback(v_option)
+				end)
+			end
+
+            function dropdown:SetValue(val) -- Added for external set
+                if table.find(options.Values, val) then
+                    SelectedText.Text = val
+                    dropdown.Value = val
+                    options.callback(val)
+                end
+            end
+
+			SelectedText.MouseButton1Click:Connect(function()
+                -- Position dropdown options relative to the main UI, not the selected text button.
+                local mainPos = Main.AbsolutePosition
+                local canvasPos = Canvas.AbsolutePosition
+                local dropdownFramePos = DropdownFrame.AbsolutePosition
+                local selectedTextPos = DropdownSelected.AbsolutePosition
+
+                local xPos = (selectedTextPos.X - mainPos.X) / Main.AbsoluteSize.X
+                local yPos = (dropdownFramePos.Y - mainPos.Y + DropdownFrame.AbsoluteSize.Y + 5) / Main.AbsoluteSize.Y
+
+                DropDownOptionsFrame.Position = UDim2.new(xPos,0,yPos,0)
+                DropDownOptionsFrame.Size = UDim2.new(0, DropdownSelected.AbsoluteSize.X, 0,0) -- Reset height for auto Y
+				DropDownOptionsFrame.Visible = not DropDownOptionsFrame.Visible
+			end)
+
+			options.callback(options.Default) -- Call initial callback
+			return dropdown
+		end
+
+		function tab:NewButton(options)
+			local button = {}
+
+			local ButtonFrame = Instance.new('Frame', Canvas) -- Renamed
+			local ButtonTitle = Instance.new('TextButton', ButtonFrame)
+			local ButtonCorner = Instance.new('UICorner', ButtonFrame)
+
+			ButtonFrame.Name = options.Name
+			ButtonFrame.Position = UDim2.new(0.5, -((Canvas.AbsoluteSize.X - 40)/2) ,0,0) -- Centered
+            ButtonFrame.Size = UDim2.new(0, Canvas.AbsoluteSize.X - 40, 0, 34) -- Use canvas width
+			ButtonFrame.BackgroundColor3 = Color3.new(0,0,0)
+			ButtonFrame.BackgroundTransparency = 0.5
+			ButtonFrame.BorderSizePixel = 0
+			ButtonFrame.BorderColor3 = Color3.new(0,0,0)
+			ButtonFrame.ZIndex = 108
+			ButtonTitle.Name = "ButtonTitle"
+			ButtonTitle.Size = UDim2.new(1,0,1,0) -- Fill ButtonFrame
+			ButtonTitle.BackgroundColor3 = Color3.new(1,1,1)
+			ButtonTitle.AutoButtonColor = false
+			ButtonTitle.BackgroundTransparency = 1
+			ButtonTitle.BorderSizePixel = 0
+			ButtonTitle.BorderColor3 = Color3.new(0,0,0)
+			ButtonTitle.Text = options.Name
+			ButtonTitle.TextColor3 = Color3.new(0.851,0.851,0.851)
+			ButtonTitle.Font = Enum.Font.Gotham
+			ButtonTitle.TextSize = 14
+			ButtonTitle.ZIndex = 109
+			ButtonCorner.CornerRadius = UDim.new(0,6)
+
+			ButtonTitle.MouseButton1Down:Connect(function()
+				Library:tween(ButtonFrame, {BackgroundColor3 = Color3.fromRGB(100,100,120)}) -- Darker press
+			end)
+
+			ButtonTitle.MouseButton1Up:Connect(function()
+				Library:tween(ButtonFrame, {BackgroundColor3 = Color3.new(0,0,0), BackgroundTransparency = 0.5}) -- Revert to normal
+			end)
+
+			ButtonTitle.MouseButton1Click:Connect(function()
+				options.callback()
+			end)
+			return button
+		end
+		return tab
+	end
+	return GUI
+end
+
+-- End of Custom UI Library
+
+-- Create the main window using the custom library
+local Window = Library:CreateWindow({
+    Title = "Eclipse Hub - Football Fusion 2",
+    SubTitle = "by Veylo", -- Used for mobile card
+    TabWidth = 160,
+    Size = UDim2.fromOffset(595, 365), -- This size is from Fluent, custom UI might behave differently. Will be overridden by custom UI's fixed size for Main frame.
+    MinimizeKey = Enum.KeyCode.LeftControl,
+    ScrollSpeed = 30, -- Will be used for tab canvas scrollbar
+    ScrollingEnabled = true -- Will be used for tab canvas scrolling
+})
+
+-- Define Tabs using the new library
+local Tabs = {
+    Catching = Window:NewTab({ Title = "Catching"}),
+    Physics = Window:NewTab({ Title = "Physics"}),
+    Auto = Window:NewTab({ Title = "Auto"}),
+    Throwing = Window:NewTab({ Title = "Throwing"}),
+    Player = Window:NewTab({ Title = "Player"}),
+    Settings = Window:NewTab({ Title = "Settings"})
+}
+
+-- Physics Tab Elements
+Options.QuickTP = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "Quick TP",
+    Default = false,
+    callback = function(value)
+        Options.QuickTP.Value = value
+    end
+})
+
+Options.QuickTPSpeed = { Value = 3 }
+Tabs.Physics:NewSlider({
+    Name = "QuickTP Speed",
+    min = 1,
+    max = 5,
+    Default = 3,
+    Rounding = 1,
+    callback = function(value)
+        Options.QuickTPSpeed.Value = value
+    end
+})
+
+Options.QuickTPBind = { Value = "F" } -- Keybinds are not directly supported by custom UI, storing value.
+
+Options.ClickTackleAimbot = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "Click Tackle Aimbot",
+    Default = false,
+    callback = function(value)
+        Options.ClickTackleAimbot.Value = value
+    end
+})
+
+Options.ClickTackleAimbotDistance = { Value = 7 }
+Tabs.Physics:NewSlider({
+    Name = "Click Tackle Aimbot Distance",
+    min = 0,
+    max = 15,
+    Default = 7,
+    Rounding = 1,
+    callback = function(value)
+        Options.ClickTackleAimbotDistance.Value = value
+    end
+})
+
+Options.AntiJam = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "Anti Jam",
+    Default = false,
+    callback = function(value)
+        Options.AntiJam.Value = value
+    end
+})
+
+Options.AntiBlock = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "Anti Block",
+    Default = false,
+    callback = function(value)
+        Options.AntiBlock.Value = value
+    end
+})
+
+Options.VisualizeBallPath = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "Visualize Ball Path",
+    Default = false,
+    callback = function(value)
+        Options.VisualizeBallPath.Value = value
+    end
+})
+
+Options.NoJumpCooldown = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "No Jump Cooldown",
+    Default = false,
+    callback = function(value)
+        Options.NoJumpCooldown.Value = value
+    end
+})
+
+Options.NoFreeze = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "No Freeze",
+    Default = false,
+    callback = function(value)
+        Options.NoFreeze.Value = value
+    end
+})
+
+Options.OptimalJump = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "Optimal Jump",
+    Default = false,
+    callback = function(value)
+        Options.OptimalJump.Value = value
+    end
+})
+
+Options.OptimalJumpType = { Value = "Jump" }
+Tabs.Physics:NewDropDown({
+    Name = "Optimal Jump Type",
+    Default = "Jump",
+    Values = {"Jump", "Dive"},
+    callback = function(value)
+        Options.OptimalJumpType.Value = value
+    end
+})
+
+Options.NoBallTrail = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "No Ball Trail",
+    Default = false,
+    callback = function(value)
+        Options.NoBallTrail.Value = value
+    end
+})
+
+Options.BigHead = { Value = false }
+Tabs.Physics:NewToggle({
+    Name = "Big Head",
+    Default = false,
+    callback = function(value)
+        Options.BigHead.Value = value
+    end
+})
+
+Options.BigHeadSize = { Value = 3 }
+Tabs.Physics:NewSlider({
+    Name = "Big Head Size",
+    min = 1,
+    max = 5,
+    Default = 3,
+    Rounding = 1,
+    callback = function(value)
+        Options.BigHeadSize.Value = value
+    end
+})
+
+-- Player Tab Elements
+Options.Speed = { Value = false }
+Tabs.Player:NewToggle({
+    Name = "Speed",
+    Default = false,
+    callback = function(value)
+        Options.Speed.Value = value
+        if Options.Speed.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = Options.SpeedValue.Value
+            end
+        else
+             local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and not AC_BYPASS then -- Revert if not AC_BYPASS, AC_BYPASS handled elsewhere
+                humanoid.WalkSpeed = 20 -- Default walkspeed
+            end
+        end
+    end
+})
+
+Options.SpeedValue = { Value = 22 }
+Tabs.Player:NewSlider({
+    Name = "Speed Value",
+    min = 20,
+    max = 23,
+    Default = 22,
+    Rounding = 1,
+    callback = function(value)
+        Options.SpeedValue.Value = value
+        if Options.Speed.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = Options.SpeedValue.Value
+            end
+        end
+    end
+})
+
+Options.JumpPower = { Value = false }
+Tabs.Player:NewToggle({
+    Name = "Jump Power",
+    Default = false,
+    callback = function(value)
+        Options.JumpPower.Value = value
+        if Options.JumpPower.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and AC_BYPASS then
+                humanoid.JumpPower = Options.JumpPowerValue.Value
+            end
+        else
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and AC_BYPASS then
+                 humanoid.JumpPower = 50 -- Default JumpPower
+            end
+        end
+    end
+})
+
+Options.JumpPowerValue = { Value = 60 }
+Tabs.Player:NewSlider({
+    Name = "Jump Power Value",
+    min = 50,
+    max = 70,
+    Default = 60,
+    Rounding = 1,
+    callback = function(value)
+        Options.JumpPowerValue.Value = value
+        if Options.JumpPower.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and AC_BYPASS then
+                humanoid.JumpPower = Options.JumpPowerValue.Value
+            end
+        end
+    end
+})
+
+Options.AngleAssist = { Value = false }
+Tabs.Player:NewToggle({
+    Name = "Angle Assist",
+    Default = false,
+    callback = function(value)
+        Options.AngleAssist.Value = value
+         if not Options.AngleAssist.Value then -- Reset JumpPower if AngleAssist is turned off
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and AC_BYPASS and not Options.JumpPower.Value then -- Only if JumpPower itself isn't active
+                humanoid.JumpPower = 50
+            elseif humanoid and AC_BYPASS and Options.JumpPower.Value then
+                humanoid.JumpPower = Options.JumpPowerValue.Value
+            end
+        end
+    end
+})
+
+Options.AngleAssistJP = { Value = 60 }
+Tabs.Player:NewSlider({
+    Name = "Angle Assist JP",
+    min = 50,
+    max = 70,
+    Default = 60,
+    Rounding = 1,
+    callback = function(value)
+        Options.AngleAssistJP.Value = value
+        if Options.AngleAssist.Value then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChild("Humanoid")
+            if humanoid and AC_BYPASS then
+                 -- Logic for AngleAssistJP is handled in the main game loop section
+            end
+        end
+    end
+})
+
+-- Auto Tab Elements
+Options.AutoCap = { Value = false }
+Tabs.Auto:NewToggle({
+    Name = "Auto Cap",
+    Default = false,
+    callback = function(value)
+        Options.AutoCap.Value = value
+    end
+})
+
+Options.AutoCapEnabled = { Value = false } -- Fluent had this as a separate toggle, CustomUI doesn't have descriptions for toggles to differentiate
+Tabs.Auto:NewToggle({
+    Name = "Auto Cap Enabled", -- Potentially confusing, might need to merge logic or rename
+    Default = false,
+    callback = function(value)
+        Options.AutoCapEnabled.Value = value
+    end
+})
+
+-- Throwing Tab Elements
+Options.QBAimbot = { Value = false }
+Tabs.Throwing:NewToggle({
+    Name = "QB Aimbot",
+    Default = false,
+    callback = function(value)
+        Options.QBAimbot.Value = value
+    end
+})
+
+Tabs.Throwing:NewButton({
+    Name = "QB Aimbot: Coming Soon",
+    callback = function() end -- Non-functional, replaces paragraph
+})
+
+-- Catching Tab Elements
+Options.Magnets = { Value = false }
+Tabs.Catching:NewToggle({
+    Name = "Magnets",
+    Default = false,
+    callback = function(value)
+        Options.Magnets.Value = value
+    end
+})
+
+Options.MagnetsType = { Value = "League" }
+Tabs.Catching:NewDropDown({
+    Name = "Magnets Type",
+    Default = "League",
+    Values = {"Blatant", "Legit", "League"},
+    callback = function(value)
+        Options.MagnetsType.Value = value
+    end
+})
+
+Options.MagnetsCustomRadius = { Value = 35 }
+Tabs.Catching:NewSlider({
+    Name = "Magnets Radius",
+    min = 0,
+    max = 70,
+    Default = 35,
+    Rounding = 1,
+    callback = function(value)
+        Options.MagnetsCustomRadius.Value = value
+    end
+})
+
+Options.ShowMagHitbox = { Value = false }
+Tabs.Catching:NewToggle({
+    Name = "Visualise Mag Hitbox",
+    Default = false,
+    callback = function(value)
+        Options.ShowMagHitbox.Value = value
+    end
+})
+
+Options.PullVector = { Value = false }
+Tabs.Catching:NewToggle({
+    Name = "Pull Vector",
+    Default = false,
+    callback = function(value)
+        Options.PullVector.Value = value
+    end
+})
+
+Options.PullVectorDistance = { Value = 50 }
+Tabs.Catching:NewSlider({
+    Name = "Pull Vector Distance",
+    min = 0,
+    max = 100,
+    Default = 50,
+    Rounding = 1,
+    callback = function(value)
+        Options.PullVectorDistance.Value = value
+    end
+})
+
+Options.PullVectorType = { Value = "Glide" }
+Tabs.Catching:NewDropDown({
+    Name = "Pull Vector Type",
+    Default = "Glide",
+    Values = {"Glide", "Teleport"},
+    callback = function(value)
+        Options.PullVectorType.Value = value
+    end
+})
+
+Options.PullVectorPower = { Value = 3 }
+Tabs.Catching:NewSlider({
+    Name = "Pull Vector Power",
+    min = 1,
+    max = 5,
+    Default = 3,
+    Rounding = 1,
+    callback = function(value)
+        Options.PullVectorPower.Value = value
+    end
+})
+
+-- Conditional Physics Options (TackleExtender, BlockExtender, Fly)
+if firetouchinterest and not IS_SOLARA then
+    Options.TackleExtender = { Value = false }
+    Tabs.Physics:NewToggle({
+        Name = "Tackle Extender",
+        Default = false,
+        callback = function(value)
+            Options.TackleExtender.Value = value
+        end
+    })
+
+    Options.TackleExtenderRadius = { Value = 5 }
+    Tabs.Physics:NewSlider({
+        Name = "Tackle Extender Radius",
+        min = 0,
+        max = 10,
+        Default = 5,
+        Rounding = 1,
+        callback = function(value)
+            Options.TackleExtenderRadius.Value = value
+        end
+    })
+end
+
+if AC_BYPASS then
+    Options.BlockExtender = { Value = false }
+    Tabs.Physics:NewToggle({
+        Name = "Block Extender",
+        Default = false,
+        callback = function(value)
+            Options.BlockExtender.Value = value
+        end
+    })
+
+    Options.BlockExtenderRange = { Value = 10 }
+    Tabs.Physics:NewSlider({
+        Name = "Block Extender Range",
+        min = 1,
+        max = 20,
+        Default = 10,
+        Rounding = 1,
+        callback = function(value)
+            Options.BlockExtenderRange.Value = value
+        end
+    })
+
+    Options.BlockExtenderTransparency = { Value = 1 }
+    Tabs.Physics:NewSlider({
+        Name = "Block Extender Transparency",
+        min = 0,
+        max = 1,
+        Default = 1,
+        Rounding = 0.1, -- CustomUI doesn't directly support float rounding this way, will use 1 decimal
+        callback = function(value)
+            Options.BlockExtenderTransparency.Value = value
+        end
+    })
+
+    Options.Fly = { Value = false }
+    local flyToggle = Tabs.Physics:NewToggle({
+        Name = "Fly",
+        Default = false,
+        callback = function(value)
+            Options.Fly.Value = value
+            -- FlyToggle:OnChanged logic from Fluent.lua needs to be integrated here or in main loop
+            flying = value -- Assuming 'flying' is a global/upvalue for the fly logic
+
+            if value then
+                player.Character.Humanoid.PlatformStand = true
+                local bodyVelocity = Instance.new("BodyVelocity", player.Character.HumanoidRootPart)
+                local current_camera = workspace.CurrentCamera -- renamed to avoid conflict
+                bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                local bodyGyro = Instance.new("BodyGyro", player.Character.HumanoidRootPart)
+                bodyGyro.P = 15000
+                bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+
+                task.spawn(function()
+                    while flying do -- Use the upvalue 'flying'
+                        runService.Stepped:wait()
+                        local speed = 11 + ((Options.FlySpeed and Options.FlySpeed.Value or 3) * 2.5)
+                        local endPos = current_camera.CFrame.Position + current_camera.CFrame.LookVector * 500
+                        bodyGyro.CFrame = CFrame.new(player.Character.HumanoidRootPart.Position, endPos)
+                        local new_velocity = Vector3.new(0, 0, 0) -- Renamed
+
+                        if not userInputService:GetFocusedTextBox() then
+                            if userInputService:IsKeyDown(Enum.KeyCode.W) then
+                                new_velocity += current_camera.CFrame.LookVector * speed
+                            end
+                            if userInputService:IsKeyDown(Enum.KeyCode.S) then
+                                new_velocity += current_camera.CFrame.LookVector * -speed
+                            end
+                            if userInputService:IsKeyDown(Enum.KeyCode.A) then
+                                new_velocity += player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(-speed, 0, 0))
+                            end
+                            if userInputService:IsKeyDown(Enum.KeyCode.D) then
+                                new_velocity += player.Character.HumanoidRootPart.CFrame:vectorToWorldSpace(Vector3.new(speed, 0, 0))
+                            end
+                        end
+
+                        if player.Character.Humanoid.Health <= 0 then
+                            flying = false
+                            Options.Fly.Value = false -- Update the option value as well
+                            -- flyToggle:SetValue(false) -- This might cause issues if called from here
+                        end
+                        if not flying then break end -- Exit loop if flying becomes false
+
+                        bodyVelocity.Velocity = new_velocity
+                        task.wait()
+                    end
+                    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                        player.Character.Humanoid.PlatformStand = false
+                        if bodyGyro.Parent then bodyGyro:Destroy() end
+                        if bodyVelocity.Parent then bodyVelocity:Destroy() end
+                    end
+                end)
+            else -- If toggled off
+                flying = false
+                 if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    player.Character.Humanoid.PlatformStand = false
+                    local bv = player.Character.HumanoidRootPart:FindFirstChild("BodyVelocity")
+                    local bg = player.Character.HumanoidRootPart:FindFirstChild("BodyGyro")
+                    if bv then bv:Destroy() end
+                    if bg then bg:Destroy() end
+                end
+            end
+        end
+    })
+
+    Options.FlySpeed = { Value = 3 }
+    Tabs.Physics:NewSlider({
+        Name = "Fly Speed",
+        min = 1,
+        max = IS_PRACTICE and 20 or 5,
+        Default = 3,
+        Rounding = 1,
+        callback = function(value)
+            Options.FlySpeed.Value = value
+            -- flySpeed = value -- Assuming 'flySpeed' is a global/upvalue for the fly logic
+        end
+    })
+end
+
+-- Function to safely get option values
+local function safeGetOption(optionName, defaultValue)
+    if Options[optionName] and Options[optionName].Value ~= nil then
+        return Options[optionName].Value
+    end
+    return defaultValue
+end
+
+-- Global 'flying' and 'flySpeed' for fly logic
+local flying = false
+local flySpeed = Options.FlySpeed and Options.FlySpeed.Value or 3 -- Initialize with default
+
+-- Settings Tab (No Save/Load config from Fluent as custom UI doesn't have prompts)
+Tabs.Settings:NewButton({
+    Name = "UI Settings (Coming Soon)",
+    callback = function()
+        -- Placeholder for future UI theme/settings if added to custom library
+    end
+})
+
+Tabs.Settings:NewButton({
+    Name = "Credits: Made by Veylo",
+    callback = function()
+        -- Non-functional, just for display
+    end
+})
+
+-- Function definitions from Fluent.lua (getPing, getServerPing, findClosestBall, etc.)
+function getPing()
+    return statsService.PerformanceStats.Ping:GetValue()
+end
+
+function getServerPing()
+    return statsService.Network.ServerStatsItem['Data Ping']:GetValue()
+end
+
+function findClosestBall()
+    local lowestDistance = math.huge
+    local nearestBall = nil
+
+    local character = player.Character
+    if not character then return nil end
+
+    for index, ball_instance in pairs(workspace:GetChildren()) do -- Renamed ball to ball_instance
+        if ball_instance.Name ~= "Football" then continue end
+        if not ball_instance:IsA("BasePart") then continue end
+        if not character:FindFirstChild("HumanoidRootPart") then continue end
+        local distance = (ball_instance.Position - character.HumanoidRootPart.Position).Magnitude
+
+        if distance < lowestDistance then
+            nearestBall = ball_instance
+            lowestDistance = distance
+        end
+    end
+
+    return nearestBall
+end
+
+local part = Instance.new("Part") -- Visual part for magnets/hitbox
+part.Transparency = 0.5
+part.Anchored = true
+part.CanCollide = false
+part.CastShadow = false
+part.Color = Color3.fromRGB(85, 170, 255)
+part.Shape = Enum.PartType.Ball
+part.Material = Enum.Material.ForceField
+-- part.Parent = workspace -- Parent will be set conditionally
+
+function beamProjectile(g, v0, x0, t1)
+    local c = 0.5*0.5*0.5;
+    local p3 = 0.5*g*t1*t1 + v0*t1 + x0;
+    local p2 = p3 - (g*t1*t1 + v0*t1)/3;
+    local p1 = (c*g*t1*t1 + 0.5*v0*t1 + x0 - c*(x0+p3))/(3*c) - p2;
+
+    local curve0 = (p1 - x0).magnitude;
+    local curve1 = (p2 - p3).magnitude;
+
+    local b = (x0 - p3).unit;
+    local r1 = (p1 - x0).unit;
+    local u1 = r1:Cross(b).unit;
+    local r2 = (p2 - p3).unit;
+    local u2 = r2:Cross(b).unit;
+    b = u1:Cross(r1).unit;
+
+    local cf1 = CFrame.new(
+        x0.x, x0.y, x0.z,
+        r1.x, u1.x, b.x,
+        r1.y, u1.y, b.y,
+        r1.z, u1.z, b.z
+    )
+
+    local cf2 = CFrame.new(
+        p3.x, p3.y, p3.z,
+        r2.x, u2.x, b.x,
+        r2.y, u2.y, b.y,
+        r2.z, u2.z, b.z
+    )
+
+    return curve0, -curve1, cf1, cf2;
+end
+
+function getNearestPartToPartFromParts(target_part, parts_table) -- Renamed parameters
+    local lowestDistance = math.huge
+    local nearestPart = nil
+
+    for index, p in pairs(parts_table) do
+        local distance = (target_part.Position - p.Position).Magnitude
+
+        if distance < lowestDistance then
+            nearestPart = p
+            lowestDistance = distance
+        end
+    end
+
+    return nearestPart
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        ping = ( getPing() + getServerPing() ) / 1000
+    end
+end)
+
+task.spawn(function()
+    runService.RenderStepped:Connect(function(dt) -- Added dt for FPS calculation consistency
+        -- fps calculation in Fluent was fps +=1 then delay(1, fps -=1).
+        -- This is a common way to estimate FPS. A more accurate way might be 1/dt.
+        -- For now, keeping the original logic structure if it was intended for a specific display.
+        -- However, the Custom UI doesn't have an FPS display component by default.
+    end)
+end)
+
+function findPossessor()
+    if not players then return nil end
+
+    for _, plr_instance in pairs(players:GetPlayers()) do -- Renamed plr to plr_instance
+        if not plr_instance or not plr_instance.Character then continue end
+        local character = plr_instance.Character
+        if not character:FindFirstChildWhichIsA("Tool") then continue end
+        return character
+    end
+    return nil
+end
+
+-- Ball handling and game logic from Fluent.lua
+local fakeBalls = {}
+local pullVectoredBalls = {}
+local velocity = {}
+local isCatching = false
+
+task.spawn(function()
+    while true do
+        task.wait(30)
+        for ball_instance, _ in pairs(pullVectoredBalls) do
+            if not ball_instance or not ball_instance.Parent then
+                pullVectoredBalls[ball_instance] = nil
+            end
+        end
+        for ball_instance, _ in pairs(fakeBalls) do
+            if not ball_instance or not ball_instance.Parent then
+                if fakeBalls[ball_instance] and fakeBalls[ball_instance].Parent then
+                    fakeBalls[ball_instance]:Destroy()
+                end
+                fakeBalls[ball_instance] = nil
+            end
+        end
+        for ball_instance, _ in pairs(velocity) do
+            if not ball_instance or not ball_instance.Parent then
+                velocity[ball_instance] = nil
+            end
+        end
+    end
+end)
+
+firetouchinterest = firetouchinterest or function() end
+
+if IS_SOLARA then
+    local originalFiretouchinterest = firetouchinterest
+    firetouchinterest = function(part2, part1, state)
+        if AC_BYPASS then
+            part1.CFrame = part2.CFrame
+        else
+            state = state == 1
+            local fakeBall = fakeBalls[part1]
+            if not fakeBall then return end
+            local direction = (part2.Position - fakeBall.Position).Unit
+            local distance = (part2.Position - fakeBall.Position).Magnitude
+            for i = 1,5,1 do
+                local percentage = i/5 + Random.new():NextNumber(0.01, 0.02)
+                part1.CFrame = fakeBall.CFrame + (direction * distance * percentage)
+            end
+        end
+    end
+end
+
+local function onCharacterCatching(character)
+    if not character then return end
+    local arm
+    local success_catch = pcall(function() arm = character:WaitForChild('Left Arm', 5) end)
+    if not success_catch or not arm then return end
+    arm.ChildAdded:Connect(function(child)
+        if not child:IsA("Weld") then return end
+        isCatching = true
+        task.wait(1.7)
+        isCatching = false
+    end)
+end
+
+workspace.ChildAdded:Connect(function(ball_instance)
+    if ball_instance.Name ~= "Football" then return end
+    if not ball_instance:IsA("BasePart") then return end
+    task.wait()
+
+    local lastPosition = ball_instance.Position
+    local lastCheck = os.clock()
+    local initalVelocity = Vector3.new(0, 0, 0)
+    pcall(function() if ball_instance and typeof(ball_instance) == "Instance" and ball_instance:IsA("BasePart") then initalVelocity = ball_instance.Velocity end end)
+
+    if (IS_SOLARA) and ball_instance:FindFirstChildWhichIsA("Trail") and not ball_instance.Anchored and camera.CameraSubject ~= ball_instance then
+        local fakeBall = ball_instance:Clone()
+        fakeBall.Name = "FFootball"
+        fakeBall.Parent = workspace
+        fakeBall.Anchored = true
+        fakeBall.CanCollide = false
+        if fakeBall:FindFirstChildWhichIsA('PointLight') then fakeBall:FindFirstChildWhichIsA('PointLight'):Destroy() end
+        ball_instance.Transparency = 1
+        local spiralDegrees = 0
+        fakeBalls[ball_instance] = fakeBall
+        task.spawn(function()
+            while ball_instance.Parent == workspace do
+                local dt = runService.Heartbeat:Wait()
+                spiralDegrees += 1500 * dt
+                initalVelocity += Vector3.new(0, -28 * dt, 0)
+                fakeBall.Position += initalVelocity * dt
+                fakeBall.CFrame = CFrame.lookAt(fakeBall.Position, fakeBall.Position + initalVelocity) * CFrame.Angles(math.rad(90), math.rad(spiralDegrees), 0)
+                if ball_instance:FindFirstChildWhichIsA("Trail") then ball_instance:FindFirstChildWhichIsA("Trail").Enabled = false end
+            end
+            if fakeBall and fakeBall.Parent then fakeBall:Destroy() end
+        end)
+    end
+
+    while ball_instance.Parent do
+        task.wait(0.1)
+        local t = (os.clock() - lastCheck)
+        pcall(function() if ball_instance and typeof(ball_instance) == "Instance" and ball_instance:IsA("BasePart") then velocity[ball_instance] = (ball_instance.Position - lastPosition) / t end end)
+        lastCheck = os.clock()
+        pcall(function() if ball_instance and typeof(ball_instance) == "Instance" and ball_instance:IsA("BasePart") then lastPosition = ball_instance.Position end end)
+    end
+end)
+
+task.spawn(function() -- Magnets logic
+    while true do
+        task.wait(1/60)
+        local ball_instance = findClosestBall()
+        if not ball_instance then
+            if part and part.Parent then part.Parent = nil end
+            continue
+        end
+        local character = player.Character
+        if not character then
+            if part and part.Parent then part.Parent = nil end
+            continue
+        end
+        local catchLeft = character:FindFirstChild("CatchLeft")
+        local catchRight = character:FindFirstChild("CatchRight")
+        if not catchLeft or not catchRight then
+            if part and part.Parent then part.Parent = nil end
+            continue
+        end
+        local catchPart = getNearestPartToPartFromParts(ball_instance, {catchLeft, catchRight})
+        if not catchPart then
+            if part and part.Parent then part.Parent = nil end
+            continue
+        end
+        if not velocity[ball_instance] then
+            if part and part.Parent then part.Parent = nil end
+            continue
+        end
+
+        if not safeGetOption("Magnets", false) then
+            if part and part.Parent then part.Parent = nil end
+            continue
+        end
+
+        local currentMagnetsType = safeGetOption("MagnetsType", "League")
+        if currentMagnetsType == "LegitV2" then -- Legacy option from Fluent, map to League
+             Options.MagnetsType.Value = "League" -- Update the option if the dropdown is available
+             currentMagnetsType = "League"
+        end
+
+        local magnetsRadiusValue = safeGetOption("MagnetsCustomRadius", 35)
+        local showHitboxValue = safeGetOption("ShowMagHitbox", false)
+
+        if currentMagnetsType == "League" then
+            local fakeBallToUse = fakeBalls[ball_instance] or ball_instance
+            local predictedPosition = fakeBallToUse.Position + (velocity[ball_instance] * ping)
+            local distance = (catchPart.Position - predictedPosition).Magnitude
+            part.Position = fakeBallToUse.Position
+            part.Size = Vector3.new(magnetsRadiusValue, magnetsRadiusValue, magnetsRadiusValue)
+            part.Parent = showHitboxValue and workspace or nil
+            part.Color = Color3.fromRGB(85, 170, 255)
+            part.Material = Enum.Material.ForceField
+            part.Transparency = 0.6
+            if distance <= magnetsRadiusValue then
+                firetouchinterest(catchPart, ball_instance, 0)
+                firetouchinterest(catchPart, ball_instance, 1)
+            end
+        else -- Blatant or Legit (original Legit from Fluent maps to Blatant here for simplicity)
+            local distance = (catchPart.Position - ball_instance.Position).Magnitude
+            local radius = (currentMagnetsType == "Blatant" and 50 or 6)
+            part.Position = (fakeBalls[ball_instance] or ball_instance).Position
+            part.Size = Vector3.new(radius, radius, radius)
+            part.Parent = showHitboxValue and workspace or nil
+            part.Color = Color3.fromRGB(85, 170, 255)
+            part.Material = Enum.Material.ForceField
+            part.Transparency = 0.6
+            if not isCatching and IS_SOLARA then continue end
+            if distance < radius then
+                firetouchinterest(catchPart, ball_instance, 0)
+                firetouchinterest(catchPart, ball_instance, 1)
+            end
+        end
+    end
+end)
+
+task.spawn(function() -- Pull Vector logic
+    while true do
+        task.wait()
+        local ball_instance = findClosestBall() if not ball_instance then continue end
+        local character = player.Character
+        local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not (ball_instance:FindFirstChildWhichIsA("Trail")) then continue end
+        if not character or not humanoidRootPart then continue end
+        if not safeGetOption("PullVector", false) then continue end
+        if pullVectoredBalls[ball_instance] then continue end
+        if ball_instance.Anchored then continue end
+
+        local distance = (humanoidRootPart.Position - ball_instance.Position).Magnitude
+        if distance > safeGetOption("PullVectorDistance", 50) then continue end
+
+        local direction = (ball_instance.Position - humanoidRootPart.Position).Unit
+        local pullType = safeGetOption("PullVectorType", "Glide")
+        local pullPower = safeGetOption("PullVectorPower", 3)
+
+        if pullType == "Teleport" then
+            pullVectoredBalls[ball_instance] = true
+            local dist = 10 + ((pullPower - 1) * 5)
+            pcall(function() if humanoidRootPart and typeof(humanoidRootPart) == "Instance" then humanoidRootPart.CFrame += direction * dist end end)
+        else -- Glide
+            pcall(function() if humanoidRootPart and typeof(humanoidRootPart) == "Instance" and humanoidRootPart:IsA("BasePart") then local newVelocity = direction * pullPower * 25 humanoidRootPart:ApplyImpulse(newVelocity * humanoidRootPart.AssemblyMass / 10) humanoidRootPart.Velocity = newVelocity end end)
+        end
+    end
+end)
+
+onCharacterCatching(player.Character)
+player.CharacterAdded:Connect(onCharacterCatching)
+
+local function onCharacterPhysics(char)
+    local humanoid = char:WaitForChild("Humanoid")
+    char.DescendantAdded:Connect(function(v)
+        task.wait()
+        if v.Name:match("FFmover") and safeGetOption("AntiBlock", false) then v:Destroy() end
+    end)
+    task.spawn(function()
+        while char and char.Parent do -- Ensure character exists
+            task.wait()
+            if safeGetOption("NoJumpCooldown", false) then humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true) end
+            local torso = char:FindFirstChild("Torso")
+            local head = char:FindFirstChild("Head")
+            if not torso or not head then return end
+            if humanoid:GetState() == Enum.HumanoidStateType.Running and values.Status.Value == "InPlay" then
+                torso.CanCollide = not safeGetOption("AntiJam", false)
+                head.CanCollide = not safeGetOption("AntiJam", false)
+            else
+                torso.CanCollide = true
+                head.CanCollide = true
+            end
+        end
+    end)
+end
+
+task.spawn(function() -- Big Head logic
+    local function applyChanges(char_instance) -- Renamed
+        local head = char_instance and char_instance:FindFirstChild("Head")
+        local mesh = head and head:FindFirstChildWhichIsA("SpecialMesh")
+        if not mesh then return end
+        mesh.MeshType = safeGetOption("BigHead", false) and Enum.MeshType.Sphere or Enum.MeshType.Head
+        head.Size = safeGetOption("BigHead", false) and Vector3.new(safeGetOption("BigHeadSize",3), 1, safeGetOption("BigHeadSize",3)) or Vector3.new(2, 1, 1)
+    end
+    while true do
+        task.wait()
+        for index, plr_instance in pairs(players:GetPlayers()) do
+            if plr_instance == players.LocalPlayer then continue end
+            applyChanges(plr_instance.Character)
+        end
+    end
+end)
+
+workspace.ChildAdded:Connect(function(ball_instance)
+    task.wait()
+    if ball_instance.Name ~= "Football" then return end
+    if not ball_instance:IsA("BasePart") then return end
+    if safeGetOption("NoBallTrail", false) and ball_instance:FindFirstChildWhichIsA("Trail") then ball_instance:FindFirstChildWhichIsA("Trail").Enabled = false end
+
+    task.spawn(function() -- Optimal Jump logic
+        if not safeGetOption("OptimalJump", false) then return end
+        local initalVelocity_oj = Vector3.new(0,0,0) -- Renamed
+        pcall(function() if ball_instance and typeof(ball_instance) == "Instance" and ball_instance:IsA("BasePart") then initalVelocity_oj = ball_instance.Velocity end end)
+        local optimalPosition = Vector3.zero
+        local currentPosition = ball_instance.Position
+        local t_oj = 0 -- Renamed
+        while true do
+            t_oj += 0.05
+            initalVelocity_oj += Vector3.new(0, -28 * 0.05, 0)
+            currentPosition += initalVelocity_oj * 0.05
+            local raycastParams = RaycastParams.new()
+            raycastParams.FilterDescendantsInstances = {workspace:FindFirstChild("Models")}
+            raycastParams.FilterType = Enum.RaycastFilterType.Include
+            local optimalJumpTypeValue = safeGetOption("OptimalJumpType", "Jump")
+            local ray = workspace:Raycast(currentPosition, Vector3.new(0, optimalJumpTypeValue == "Jump" and -13 or -15, 0), raycastParams)
+            local antiCrashRay = workspace:Raycast(currentPosition, Vector3.new(0, -500, 0), raycastParams)
+            if ray and t_oj > 0.75 then
+                optimalPosition = ray.Position + Vector3.new(0, 2, 0)
+                break
+            end
+            if not antiCrashRay then optimalPosition = currentPosition break end
+            if not ball_instance or not ball_instance.Parent then break end -- Exit if ball is gone
+             task.wait() -- yield to prevent script exhaustion
+        end
+        if not ball_instance or not ball_instance.Parent then return end -- Don't create part if ball is gone
+        local oj_part = Instance.new("Part") -- Renamed
+        oj_part.Anchored = true
+        oj_part.Material = Enum.Material.Neon
+        oj_part.Size = Vector3.new(1.5, 1.5, 1.5)
+        oj_part.Position = optimalPosition
+        oj_part.CanCollide = false
+        oj_part.Color = Color3.fromRGB(85, 170, 255)
+        oj_part.Parent = workspace
+        repeat task.wait() until not ball_instance or ball_instance.Parent ~= workspace
+        if oj_part and oj_part.Parent then oj_part:Destroy() end
+    end)
+
+    task.spawn(function() -- Visualize Ball Path logic
+        if not safeGetOption("VisualizeBallPath", false) then return end
+        local initalVelocity_bp = Vector3.new(0,0,0) -- Renamed
+        pcall(function() if ball_instance and typeof(ball_instance) == "Instance" and ball_instance:IsA("BasePart") then initalVelocity_bp = ball_instance.Velocity end end)
+        local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
+        a0.Parent = workspace.Terrain; a1.Parent = workspace.Terrain
+        local beam = Instance.new("Beam", workspace.Terrain)
+        beam.Attachment0 = a0; beam.Attachment1 = a1
+        beam.Segments = 500; beam.Width0 = 0.5; beam.Width1 = 0.5
+        beam.Transparency = NumberSequence.new(0)
+        beam.Color = ColorSequence.new(Color3.fromRGB(85, 170, 255))
+        local g_bp = Vector3.new(0, -28 ,0); local x0_bp = ball_instance.Position; local v0_bp = initalVelocity_bp -- Renamed
+        local curve0, curve1, cf1, cf2 = beamProjectile(g_bp, v0_bp, x0_bp, 5)
+        beam.CurveSize0 = curve0; beam.CurveSize1 = curve1
+        a0.CFrame = a0.Parent.CFrame:inverse() * cf1; a1.CFrame = a1.Parent.CFrame:inverse() * cf2
+        repeat task.wait() until not ball_instance or ball_instance.Parent ~= workspace
+        if beam and beam.Parent then beam:Destroy() end
+        if a0 and a0.Parent then a0:Destroy() end
+        if a1 and a1.Parent then a1:Destroy() end
+    end)
+end)
+
+local quickTPCooldown = os.clock()
+userInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    local quickTPBindValue = safeGetOption("QuickTPBind", "F") -- Get keybind from options
+    if input.KeyCode ~= Enum.KeyCode[quickTPBindValue] then return end
+    local character = player.Character
+    local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChild("Humanoid")
+    if not safeGetOption("QuickTP", false) then return end
+    if not character or not humanoidRootPart or not humanoid then return end
+    if (os.clock() - quickTPCooldown) < 0.1 then return end
+    local speed = 2 + (safeGetOption("QuickTPSpeed", 3) / 4)
+    humanoidRootPart.CFrame += humanoid.MoveDirection * speed
+    quickTPCooldown = os.clock()
+end)
+
+mouse.Button1Down:Connect(function()
+    if not safeGetOption("ClickTackleAimbot", false) then return end
+    local possessor = findPossessor()
+    local character = player.Character
+    local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+    if not character or not humanoidRootPart then return end
+    if not possessor or not possessor:FindFirstChild("HumanoidRootPart") then return end
+    local distance = (possessor.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude
+    if distance > safeGetOption("ClickTackleAimbotDistance", 7) then return end
+    humanoidRootPart.CFrame = possessor.HumanoidRootPart.CFrame
+end)
+
+if player.Character then onCharacterPhysics(player.Character) end
+player.CharacterAdded:Connect(onCharacterPhysics)
+
+local function onCharacterMovement(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    task.spawn(function()
+        while AC_BYPASS and humanoid.Parent do
+            task.wait(.1)
+            if safeGetOption("JumpPower", false) then humanoid.JumpPower = safeGetOption("JumpPowerValue", 50) else humanoid.JumpPower = 50 end
+        end
+    end)
+    humanoid.Jumping:Connect(function()
+        if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then return end
+        if AC_BYPASS then return end
+        task.wait(0.05)
+        if safeGetOption("JumpPower", false) then
+            pcall(function() if humanoidRootPart and typeof(humanoidRootPart) == "Instance" and humanoidRootPart:IsA("BasePart") then local jumpBoost = safeGetOption("JumpPowerValue", 50) - 50 humanoidRootPart:ApplyImpulse(Vector3.new(0, jumpBoost * humanoidRootPart.AssemblyMass, 0)) end end)
+        end
+    end)
+end
+
+if player.Character then onCharacterMovement(player.Character) else player.CharacterAdded:Connect(onCharacterMovement) end
+
+task.spawn(function() -- Angle Assist logic
+    angleTick = os.clock()
+    local oldLookVector = Vector3.new(0, 0, 0)
+    local shiftLockEnabled = false
+    local lastEnabled = false
+    local function hookCharacter(character)
+        local humanoid = character:WaitForChild("Humanoid")
+        local hrp = character:WaitForChild("HumanoidRootPart")
+        humanoid.Jumping:Connect(function()
+            if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then return end
+            if os.clock() - angleTick > 0.2 then return end
+            if not safeGetOption("AngleAssist", false) then return end
+            if AC_BYPASS then return end
+            task.wait(0.05)
+            pcall(function() if hrp and typeof(hrp) == "Instance" and hrp:IsA("BasePart") then local angleAssistJPValue = safeGetOption("AngleAssistJP", 50) hrp:ApplyImpulse(Vector3.new(0, (angleAssistJPValue - 50) * hrp.AssemblyMass, 0)) end end)
+        end)
+    end
+    if player.Character then hookCharacter(player.Character) else player.CharacterAdded:Connect(hookCharacter) end
+    userInputService:GetPropertyChangedSignal("MouseBehavior"):Connect(function()
+        if userInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then shiftLockEnabled = true else shiftLockEnabled = false end
+    end)
+    while true do
+        task.wait()
+        local character = player.Character; if not character then continue end
+        local hrp = character:FindFirstChild("HumanoidRootPart"); if not hrp then continue end
+        local humanoid = character:FindFirstChild("Humanoid"); if not humanoid then continue end
+        local lookVector = hrp.CFrame.LookVector
+        if not shiftLockEnabled and lastEnabled then angleTick = os.clock() end
+        if AC_BYPASS then
+            local baseJP = safeGetOption("JumpPower", false) and safeGetOption("JumpPowerValue", 50) or 50
+            if (os.clock() - angleTick < 0.2) and safeGetOption("AngleAssist", false) then
+                humanoid.JumpPower = baseJP + (safeGetOption("AngleAssistJP", 50) - 50)
+            else
+                humanoid.JumpPower = baseJP
+            end
+        end
+        oldLookVector = hrp.CFrame.LookVector
+        lastEnabled = shiftLockEnabled
+    end
+end)
+
+runService:BindToRenderStep("walkSpeed", Enum.RenderPriority.Character.Value, function()
+    local character = player.Character
+    local humanoid = character and character:FindFirstChild("Humanoid")
+    if not character or not humanoid then return end
+    if humanoid:GetState() ~= Enum.HumanoidStateType.Running then return end
+    if humanoid.WalkSpeed == 0 and not safeGetOption("NoFreeze", false) then return end
+    if not character:FindFirstChild("HumanoidRootPart") then return end
+    local moveDirection
+    if moveToUsing and #moveToUsing > 0 and (os.clock() - (moveToUsing[#moveToUsing] or 0)) < 0.5 then
+        pcall(function() if humanoid.WalkToPoint and typeof(humanoid.WalkToPoint) == "Vector3" and character and character:FindFirstChild("HumanoidRootPart") and typeof(character.HumanoidRootPart.Position) == "Vector3" then local direction = (humanoid.WalkToPoint - character.HumanoidRootPart.Position) if direction.Magnitude > 0 then moveDirection = direction.Unit end end end)
+    end
+    if not moveDirection then moveDirection = humanoid.MoveDirection end
+    local currentVel = Vector3.new(0,0,0)
+    pcall(function() if character and character:FindFirstChild("HumanoidRootPart") and typeof(character.HumanoidRootPart) == "Instance" and character.HumanoidRootPart:IsA("BasePart") then currentVel = character.HumanoidRootPart.AssemblyLinearVelocity end end)
+    if safeGetOption("Speed", false) or safeGetOption("NoFreeze", false) then
+        local speedVal = 20
+        if safeGetOption("Speed", false) and type(safeGetOption("SpeedValue", 20)) == "number" and safeGetOption("SpeedValue", 20) > 20 then speedVal = safeGetOption("SpeedValue", 20) end
+        pcall(function() if character and character:FindFirstChild("HumanoidRootPart") and typeof(character.HumanoidRootPart) == "Instance" and character.HumanoidRootPart:IsA("BasePart") then local newVelocity = Vector3.new(moveDirection.X * speedVal, currentVel.Y, moveDirection.Z * speedVal) character.HumanoidRootPart.AssemblyLinearVelocity = newVelocity end end)
+    end
+end)
+
+local finishLine = not IS_PRACTICE and workspace.Models.LockerRoomA.FinishLine or Instance.new('Part')
+
+task.spawn(function() -- AutoCap Logic
+    while true do
+        task.wait()
+        if not safeGetOption("AutoCap", false) or not safeGetOption("AutoCapEnabled", false) then continue end
+        if IS_PRACTICE then continue end
+        local character = player.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        if not finishLine or typeof(finishLine) ~= "Instance" then continue end
+        local distance
+        pcall(function() distance = (hrp.Position - finishLine.Position).Magnitude end)
+        if not distance or distance > 10 then continue end
+        local possessor = findPossessor()
+        if not possessor then continue end
+        local possessorIsLocalPlayer = possessor == character
+        if possessorIsLocalPlayer then
+            local event = game:GetService("ReplicatedStorage").Remotes.Touchdown
+            if event then event:FireServer() end
+        end
+    end
+end)
+
+-- TackleExtender logic (from Fluent.lua, needs firetouchinterest)
+task.spawn(function()
+    while true do
+        task.wait()
+        if not firetouchinterest or IS_SOLARA then continue end -- Only run if firetouchinterest exists and not Solara
+        if not safeGetOption("TackleExtender", false) then continue end
+
+        local possessor = findPossessor()
+        local character = player.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+        if not hrp then continue end
+        if not possessor or not possessor:FindFirstChild("HumanoidRootPart") then continue end -- Added HRP check for possessor
+
+        local tackleRadius = safeGetOption("TackleExtenderRadius", 5)
+        local distance = (hrp.Position - possessor.HumanoidRootPart.Position).Magnitude
+
+        if distance > tackleRadius then continue end
+
+        for index, part_instance in pairs(possessor:GetChildren()) do -- Renamed part to part_instance
+            if not part_instance:IsA("BasePart") then continue end
+            if not character:FindFirstChild(part_instance.Name) then continue end
+            firetouchinterest(character:FindFirstChild(part_instance.Name), part_instance, 0)
+            firetouchinterest(character:FindFirstChild(part_instance.Name), part_instance, 1)
+        end
+    end
+end)
+
+-- BlockExtender logic (from Fluent.lua, needs AC_BYPASS)
+task.spawn(function()
+    while true do
+        task.wait()
+        if not AC_BYPASS then continue end
+
+        local character = player.Character
+        local blockPart = character and character:FindFirstChild("BlockPart")
+        if not blockPart then continue end
+
+        local blockExtenderEnabled = safeGetOption("BlockExtender", false)
+        local blockExtenderRange = safeGetOption("BlockExtenderRange", 10)
+        local blockExtenderTransparency = safeGetOption("BlockExtenderTransparency", 1)
+
+        blockPart.Size = blockExtenderEnabled and Vector3.new(blockExtenderRange, blockExtenderRange, blockExtenderRange) or Vector3.new(0.75, 5, 1.5)
+        blockPart.Transparency = blockExtenderEnabled and blockExtenderTransparency or 1
+    end
+end)
+
+
+-- Final setup: Select the first tab by default
+if Tabs.Catching then
+    Tabs.Catching:Activate()
+end
+
+print("Eclipse Hub Loaded!")
